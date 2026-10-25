@@ -1664,3 +1664,33 @@ needed near +39 each on the mean: cut. Not merged.
   (on the old machine) or rebuild the lab here, and measure FSF without
   its pawn score alone against full FSF at our budget.
 - Kept: `plan33-pstr2` (2308a89). Deleted: pstr, both diagnostics.
+
+### Royal safety against FSF's King safety row
+
+- Static check: build 36 minus `plan33-off-king` (a diagnostic with all
+  royal safety terms off: the danger cost, zone and proximity, shelter,
+  guard, castling, open shield; never merged) against FSF's classical
+  King safety row, on queue265's build 36 games, one ply in 12:
+
+| Variant | n | sd ours | sd FSF | Corr | FSF on ours |
+| ------- | - | ------- | ------ | ---- | ----------- |
+| crazyhouse | 508 | 3.64 | 10.16 | +0.86 | 2.39 |
+| capablanca | 1295 | 2.47 | 3.42 | +0.75 | 1.04 |
+| standard | 1415 | 1.25 | 1.52 | +0.61 | 0.74 |
+
+- Crazyhouse is the outlier: the shape follows FSF's, the size is 2.4
+  times smaller. Where captures fill a hand FSF's sum also counts the
+  hand: held pieces that can drop on the ring are attackers, and their
+  drops next to the king are hits. Its flank term is six times larger
+  there, but its own lab put the flank at -0.9 in crazyhouse (queue224).
+- Earlier tries:
+
+| Try | Result | Recorded cause | Recorded precondition | Difference now |
+| --- | ------ | -------------- | --------------------- | -------------- |
+| E2 (plan 27, a hand type's best drop pressure once) | shogi -6.4 ± 12.4 | | | the old static danger table, gone since KD |
+| KH (plan 29, hand attackers in the danger sum, queue226) | crazyhouse -24.4 against -18.0 | our danger moved little at the tips (attackers mean 0.6) | | KH played before LZ: the lazy margin (56 cp in crazyhouse) skipped the danger sum in quiescence, so KH's inputs were mostly never read; LZ merged after it (+18.5) |
+| FSF's `e_khand` (lab, queue225) | -58.5 for FSF without it | | | |
+| FSF's flank (lab, queue224) | -0.9 | not the gap | | no candidate |
+
+- `plan33-kh`: KH (edd5f93) on build 36. Only variants with drops
+  change; it plays crazyhouse, six rounds against build 36.
