@@ -1818,4 +1818,67 @@ Past tries of these parts:
   A knight in hand at the start position: +32, the same with either side
   to move.
 - The builds of tqueen and dropmob and the probes ran at idle priority
-  beside queue267, on the two cores the games leave.
+  beside queue267, on the two cores the games leave. A `derive` run at
+  normal priority took all cores for near two minutes during round a of
+  tpiece in xiangqi.
+- Static check of dropmob (dropmob minus `offmobility`, FSF's Mobility
+  row): crazyhouse 0.70 to 0.92, sd 0.59 against FSF's 0.80.
+
+### tqueen, three forms
+
+| Form | standard | crazyhouse | capablanca |
+|------|---------:|-----------:|-----------:|
+| main | 0.59 | 0.79 | 0.71 |
+| tpiece | 0.74 | 0.86 | 0.77 |
+| tqueen, one type, full squares | 0.82 | 0.86 | 0.73 |
+| tqueen, all top types | | 0.90 | |
+| tqueen, squares weighed by gain (99786b9) | 0.80 | 0.90 | 0.85 |
+
+- One type: the dearest piece was the last type of the top value. In
+  crazyhouse that is the promoted copy of the queen, a type that is
+  almost never on the board, so the part was near 0 there (fit with
+  FSF's queen part 0.06). The target is now every type of the top value.
+- Full squares: in capablanca the archbishop and the chancellor are
+  cheaper than the queen (967 and 1148 against 1285) and count with all
+  their squares; the part reached 4 pawns where FSF's was 0.3 (sd 0.63
+  against 0.26). FSF counts only knights, bishops and rooks there. Each
+  square now weighs the target's value less the attacker's, over the
+  target's value (knight near 0.69, rook 0.48, archbishop 0.25,
+  chancellor 0.11).
+- The new part against FSF's queen part: standard 0.78, crazyhouse
+  0.79, capablanca 0.81.
+
+### Queue267 round a, and tqueen joins it
+
+| Arm | standard | xiangqi | crazyhouse | capablanca |
+|-----|---------:|--------:|-----------:|-----------:|
+| main | +54.3 | +22.6 | -177.2 | -161.9 |
+| tpiece | +77.7 | +13.9 | -179.5 | -125.0 |
+| tpiece - main | +23.4 | -8.7 | -2.3 | +36.9 |
+
+- The mean of the four is +12.3 after one round (σ near 25 per round).
+- The queue loop was stopped at the end of round a and started again
+  with tqueen as a third arm (smoke 1 of 4, normal games). tqueen plays
+  its round a first, then rounds b and c run all three arms
+  interleaved. tqueen holds tpiece, so the queue gives both.
+- dropmob changes only variants with drops; it plays crazyhouse after
+  queue267, against main, three rounds.
+
+### Royal safety in standard, FSF's parts
+
+- FSF probe build with trace rows for the parts of `king()`: shelter and
+  storm, the danger penalty, pawnless flank, flank attacks; on the 1415
+  standard positions of the royal probe.
+
+| FSF part | sd | Corr with FSF's row | Corr with ours |
+|----------|---:|--------------------:|---------------:|
+| shelter and storm | 0.28 | 0.42 | 0.24 |
+| danger penalty | 1.36 | 0.98 | 0.60 |
+| pawnless flank | 0.08 | 0.08 | 0.02 |
+| flank attacks | 0.11 | 0.57 | 0.35 |
+
+- Ours plus a part against FSF's row: shelter 0.65, pawnless flank 0.61,
+  flank 0.64 (ours alone 0.61). The gap is not a missing part: FSF's row
+  is its danger penalty, and ours follows it at 0.60. Next: our danger
+  sum alone against FSF's danger penalty (`plan33-off-kdanger36`, the
+  sum off on build 36), and the rest of ours against FSF's shelter.
