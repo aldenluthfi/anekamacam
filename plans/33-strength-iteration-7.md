@@ -1604,3 +1604,32 @@ Three rounds of 200, interleaved (no forfeits). pfsf minus main:
   at build 36's values.
 - Queue264: build 36 and pstr against FSF 2100, three rounds per
   variant.
+
+### Queue264, pstr (stopped after round a)
+
+| Variant | build 36 | pstr | Difference |
+| ------- | -------- | ---- | ---------- |
+| standard | +31.4 | +74.1 | +42.7 |
+| xiangqi | +63.2 | -22.6 | -85.8 |
+| crazyhouse | -105.6 | -214.8 | -109.2 |
+| capablanca | -121.1 | -107.5 | +13.6 |
+
+- σ near 33 for one round. Xiangqi and crazyhouse fall near 2.5σ and
+  3.3σ, so the two rounds left could not bring pstr to the merge rule.
+- Xiangqi: a soldier cannot promote, and FSF scores no structure for it,
+  so pstr's form had no source there. Our pawn arm was worth +52 in
+  xiangqi (queue256).
+- Crazyhouse: FSF triples `Connected` on the second rank when captures
+  fill a hand (`pawns.cpp`, the shield against drops); pstr left that
+  out and cut the unit of an unmoved connected pawn to near a tenth of
+  a pawn.
+- `plan33-pstr2` (pstr and both causes): a pawn that cannot promote
+  keeps build 36's structure (flat connected, the passed factors, the
+  old faults, `PAWN_FLAT_RATIO`), and where captures fill a hand the
+  connected unit counts three times on the second rank
+  (`PAWN_SHIELD_FACTOR`). Bench nodes (seed 1, depth 8): pstr2 equals
+  pstr in standard and capablanca (85720, 281832) and build 36 in
+  xiangqi (243647). So queue264's standard and capablanca round a counts
+  for pstr2, and xiangqi plays no more (0, the same search).
+- Queue265: build 36 and pstr2, standard and capablanca rounds b and c,
+  crazyhouse three rounds.
