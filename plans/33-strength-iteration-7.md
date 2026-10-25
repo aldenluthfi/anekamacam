@@ -1970,3 +1970,71 @@ Past tries of these parts:
   three variants are 0 by construction, so the crazyhouse difference
   stands for the mean of four at the same z.
 - Smoke 0 of 4 (main scores near 25% here), no forfeits.
+
+| Round | main | dropmob | dropmob - main |
+|-------|-----:|--------:|---------------:|
+| a | -137.0 | -147.2 | -10.2 |
+| b | -200.2 | -179.5 | +20.7 |
+| c | -190.8 | -145.1 | +45.7 |
+
+- Mean +18.7, σ near 22 (0.85σ); no forfeits. Not merged under the rule.
+  The static fit rose from 0.70 to 0.92; the play leans the same way but
+  is under 1σ.
+
+### Xiangqi against FSF's rows
+
+Main minus the off builds on the 1821 sampled positions of queue267
+round a (FSF's phase from its xiangqi values):
+
+| Term | Corr | sd ours | sd FSF |
+|------|-----:|--------:|-------:|
+| royal safety | 0.80 | 0.70 | 2.91 |
+| mobility | 0.41 | 0.25 | 0.71 |
+| threats | 0.80 | 0.19 | 0.30 |
+
+- Mobility fits worst. FSF counts, for a fairy piece, its attacks on
+  occupied squares and its quiet moves to empty squares
+  (`evaluate.cpp`, `Pt > QUEEN`); ours counts its attack map only. A
+  cannon moves by sliding and takes by a hop, so the two counts differ
+  most there. FSF probe rows with its own mobility counted both ways, the
+  fairy formula for every type: the attack form fits FSF's row at 0.69
+  and ours at 0.68; the move form fits FSF's row at 0.85 and ours at
+  0.59. The count of quiet moves is an input we lack.
+- Size: our mobility is a part of the most valuable piece, FSF's fairy
+  value is fixed (150, 200); in xiangqi the most valuable piece is the
+  chariot, half a queen, so ours is half FSF's there by construction.
+- A port needs quiet move maps beside the attack maps: the same recipe
+  builder over the move legs. Only variants with a piece that moves and
+  takes in different ways change (xiangqi in the test set), so a gain
+  must reach 2σ in xiangqi alone. Not started.
+
+### Where the losses come from (falls)
+
+- A fall: our score at one of our moves at least 150 cp below our score
+  at our move before, both of the two before it at or above 0 (a rise to
+  a repetition draw and back is left out; such draws score near +48).
+- Share of our moves (queue267 rounds a and b, main): standard 1.6% and
+  1.8%, xiangqi 1.6%, crazyhouse 6.7% and 6.9%, capablanca 2.9% and 3.3%.
+  Lost games that have a fall from 0 or more: standard 54 of 77 and 49
+  of 69, xiangqi 76 of 92 and 67 of 91, crazyhouse 115 of 147 and 110 of
+  148, capablanca 99 of 141 and 101 of 139.
+- In about three quarters of our losses we stood at 0 or more and then
+  fell within two of our moves. Test of the cause on 40 capablanca falls:
+  our search and FSF's at depths 8, 11 and 14 from the position before
+  the fall.
+
+### pim, the move of a stopped depth
+
+- An iteration that the clock stops was thrown away whole; the move of
+  the previous depth was played (plan 24 kept a fallback for depth 1
+  only, and recorded the later depths as a choice, not tested in play).
+  pim (`plan33-pim`, 612a66c, from main): each depth starts with no
+  candidate; a root move becomes the candidate when its subtree completes
+  with a score above alpha (above the window or the moves before it); a
+  stopped depth plays its candidate if it has one. Depth 1 keeps its old
+  rule. The score of a stopped depth is never kept.
+- The time series of plan 27 (T1, T1b, T2, T3, T4) set when a depth may
+  start and the move horizon; none used a stopped depth's move.
+- Fixed-depth nodes equal main's (capablanca bench, depth 8, 391675).
+  Smoke 1-1-2 in standard, no forfeits. Queue269: main and pim, all four
+  variants, three rounds of 200.
