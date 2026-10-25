@@ -2065,6 +2065,20 @@ round a (FSF's phase from its xiangqi values):
 
 - Standard by the size of FSF's term: 4 pawns or more, ours +4.70
   against +6.57 (main near half of FSF's there); 98% the same sign.
+- kring is 5e50f8d. Smoke 2 of 4 in capablanca, no forfeits. Queue270:
+  main and kring, all four variants, three rounds of 200.
+
+### Queue269, pim (cut after round a)
+
+| Variant | main | pim | pim - main |
+|---------|-----:|----:|-----------:|
+| standard | +74.1 | +65.0 | -9.1 |
+| xiangqi | +61.4 | +34.9 | -26.5 |
+| crazyhouse | -195.5 | -141.0 | +54.5 |
+| capablanca | -129.0 | -147.2 | -18.2 |
+
+- Mean +0.2. A merge needs near +30 a round from here: near 1%. Cut, no
+  forfeits; not merged.
 
 ### pim, the move of a stopped depth
 
