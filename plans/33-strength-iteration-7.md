@@ -2065,8 +2065,14 @@ round a (FSF's phase from its xiangqi values):
 
 - Standard by the size of FSF's term: 4 pawns or more, ours +4.70
   against +6.57 (main near half of FSF's there); 98% the same sign.
+- Xiangqi: 0.80 to 0.84 (sd 0.70 to 0.91, FSF's 2.91).
 - kring is 5e50f8d. Smoke 2 of 4 in capablanca, no forfeits. Queue270:
   main and kring, all four variants, three rounds of 200.
+- Tree: nodes to a fixed depth, kring over main, seeded, idle priority
+  beside the queue: standard +35% (16 probe positions, depth 10) and +10%
+  (32 others), capablanca +19% (16, depth 9), crazyhouse -11% (16, depth
+  7). A larger sum draws the search into checks, which are extended
+  (the C2 chain above); where the tree grows, the better fit pays for it.
 
 ### Queue269, pim (cut after round a)
 
