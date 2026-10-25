@@ -1712,3 +1712,29 @@ needed near +39 each on the mean: cut. Not merged.
   term whose fit was poor (0.56 to 0.85) and gave it inputs it lacked.
   The next leads are ranked by fit: threats and mobility were not yet
   checked.
+
+### Threats and mobility against FSF's rows
+
+Build 36 minus a build with the term set to zero (`plan33-off-threats36`,
+`plan33-off-mobility36`), on queue265's build 36 games, against FSF's
+classical Threats and Mobility rows blended by FSF's phase.
+
+| Variant    | Term     |    n | sd ours | sd FSF | corr | FSF on ours |
+|------------|----------|-----:|--------:|-------:|-----:|------------:|
+| standard   | threats  | 1182 |    0.31 |   0.47 | 0.59 |        0.89 |
+| standard   | mobility | 1398 |    0.33 |   0.48 | 0.72 |        1.04 |
+| crazyhouse | threats  |  508 |    0.34 |   0.89 | 0.79 |        2.10 |
+| crazyhouse | mobility |  508 |    0.40 |   0.80 | 0.70 |        1.39 |
+| capablanca | threats  | 1280 |    0.43 |   0.61 | 0.71 |        0.99 |
+| capablanca | mobility | 1296 |    0.58 |   0.69 | 0.89 |        1.05 |
+
+- The poorest fit with the largest FSF worth is threats in standard
+  (corr 0.59; FSF's threats row was worth 129 there in queue257). Next
+  is the standard royal safety (0.61), then mobility in crazyhouse
+  (0.70) and threats in capablanca (0.71).
+- Mobility in capablanca (0.89) is near pfsf's fit after the port; it
+  is not a lead.
+- Crazyhouse threats fit well (0.79) at half FSF's size; size alone did
+  not gain three times above, so it is not a lead.
+- The probes ran one after another on one core; later probes run side
+  by side.
