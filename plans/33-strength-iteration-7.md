@@ -2193,6 +2193,36 @@ round a (FSF's phase from its xiangqi values):
   DW). The size of the crazyhouse terms against FSF's is closed as a
   lead: four tries, none above noise.
 
+### Queue273, main against main (A/A)
+
+- Nine first rounds of candidates lost in standard nearly every time,
+  and the arm that plays first in standard scored near +17 over the
+  second (seven pairs, 1.3σ). Main's own standard results across eight
+  rounds (54 to 115, sd near 25.5) match the harness error (σ near
+  23.5). Queue273 plays main against a byte-identical copy, all four
+  variants, two rounds, the order alternating: it shows a first-arm
+  effect if there is one, and the spread of a difference of two equal
+  arms.
+
+### mobmove, quiet moves in the mobility
+
+- From the xiangqi chain: FSF counts a fairy piece's attacks on held
+  squares and its quiet moves to empty ones; ours counted its attack map
+  only (fit 0.41; FSF's own row counted our way fits FSF's at 0.69, its
+  move way at 0.85).
+- Past tries: none.
+- mobmove (`plan33-mobmove`, 7b8b632, from main): the recipe builder
+  takes a quiet flag (a vector's target is a last leg that can move); the
+  quiet tables sit beside the attack tables, `piece_attacks!` takes either
+  set, and `quiet_apart` marks a piece whose quiet tables differ from
+  its attack tables on some square. Such a piece counts the held squares
+  of its area that it attacks and the empty ones that its quiet moves
+  reach. Bench nodes equal main's in standard, crazyhouse and capablanca
+  (no non-pawn piece there moves apart from its captures) and change in
+  xiangqi (the cannon).
+- Static check in xiangqi next (mobmove minus `offmobility`, FSF's
+  Mobility row).
+
 ### pim, the move of a stopped depth
 
 - An iteration that the clock stops was thrown away whole; the move of
