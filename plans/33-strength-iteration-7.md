@@ -2383,6 +2383,14 @@ round a (FSF's phase from its xiangqi values):
   dropmob and kring, merged as in parity.
 - Smoke 1 of 4 in crazyhouse, no forfeits. Queue279: build 37 and
   parity37, all four variants, three rounds.
+- Queue279 round a (main first): standard +115.2 / +119.1 (+3.9),
+  xiangqi +49.0 / +90.6 (+41.6), crazyhouse -100.0 / -151.3 (-51.3),
+  capablanca -72.2 / -83.2 (-11.0); mean -4.2. Rounds b and c would
+  need near +32 each. Cut, no forfeits; not merged.
+- The deeper search does not make the ports pay either. The eval ports
+  of this plan (tpiece, tqueen, dropmob, kring, mobmove) are closed;
+  their branches stay as the record of the forms, their binaries are
+  deleted.
 
 ### Queue273, the A/A result (stopped after round a)
 
