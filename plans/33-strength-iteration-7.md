@@ -2152,6 +2152,32 @@ round a (FSF's phase from its xiangqi values):
   capablanca (depth 7), and differ in crazyhouse.
 - It plays crazyhouse after queue271, against the base of that time.
 
+### Queue271, parity (cut in round c)
+
+| Round | Arm | standard | xiangqi | crazyhouse | capablanca |
+|-------|-----|---------:|--------:|-----------:|-----------:|
+| a | main | +111.4 | +29.6 | -151.3 | -145.1 |
+| a | parity | +26.1 | +54.3 | -100.0 | -83.2 |
+| b | parity | +121.1 | +47.2 | -115.2 | -123.0 |
+| b | main | +98.1 | +47.2 | -155.5 | -119.1 |
+| c | main | +79.5 | +79.5 | | |
+| c | parity | +72.2 | +72.2 | | |
+
+- parity minus main: standard -85.3, +23.0, -7.3 (-23.2); xiangqi +24.7,
+  0.0, -7.3 (+5.8); crazyhouse +51.3, +40.3 (+45.8); capablanca +61.9,
+  -3.9 (+29.0). Mean near +14. For +20 the last two variants needed near
+  +71 each in round c: near 5%. Cut, no forfeits; not merged.
+- Crazyhouse gains in both rounds (+46, near 1.6σ over two); it holds
+  dropmob and kring there, and both leaned the same way alone. Standard
+  loses; parity's tree there is smaller than main's (-18% nodes at depth
+  10, 32 positions), so the loss is not the tree.
+- The four standard pairs since the order alternates: parity first in
+  round b, +23.0; main first in rounds a and c, -85.3 and -7.3.
+- The fall rate (a fall of 150 cp between two of our moves from 0 or
+  more) is higher for every arm that adds an eval term, also where the
+  arm gains (tpiece in capablanca 3.2% and 3.5% against 2.9% and 3.3%):
+  it does not follow the Elo and is not a lead.
+
 ### pim, the move of a stopped depth
 
 - An iteration that the clock stops was thrown away whole; the move of
