@@ -629,10 +629,10 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 /// - tokens : &[&str]      -> standard `go` tokens
 ///
 /// Notes:
-/// Without `movestogo`, the clock uses 30 moves. A share also gets the
-/// increment, and the time is at most half the clock. A new depth starts
-/// only in the first quarter of the time, so a clock move uses about one
-/// share. The deadline starts when the `go` is read.
+/// Without `movestogo`, the clock uses the derived `clock_moves`. A share
+/// also gets the increment, and the time is at most half the clock. A new
+/// depth starts only in the first quarter of the time, so a clock move
+/// uses about one share. The deadline starts when the `go` is read.
 ///
 pub fn start_search(session: &mut Session, tokens: &[&str]) {
     abort_search(session);
@@ -722,7 +722,10 @@ pub fn start_search(session: &mut Session, tokens: &[&str]) {
     } else {
         let remaining =
             time_ms.saturating_sub(session.overhead_ms).max(1);
-        let moves = if movestogo > 0 { movestogo as u128 } else { 30 };
+        let moves = match movestogo {
+            0 => session.state.statics.search.clock_moves.max(1) as u128,
+            count => count as u128,
+        };
         let share = (remaining / moves).saturating_add(inc_ms);
 
         (2 * share).clamp(1, (remaining / 2).max(1)) * 1_000_000                /* a new depth starts in the first    */
