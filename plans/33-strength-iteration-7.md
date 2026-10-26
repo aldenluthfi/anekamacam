@@ -2365,6 +2365,14 @@ round a (FSF's phase from its xiangqi values):
   are long; the test set still leaves time at the end on build 37.
 - Smoke 4 of 4 in standard, no forfeits. Queue278: build 37 and
   tclock15, all four variants, three rounds.
+- Queue278 (cut in round b): tclock15 minus build 37, standard -11.2,
+  -31.1 (-21.2); xiangqi +78.8, +21.4 (+50.1); crazyhouse -13.5, -9.4
+  (-11.5); capablanca +12.0 (one round). Mean near +7; round c would
+  need near +50. Cut, no forfeits; not merged, branch and binary
+  deleted. 20 moves is near the best point on this clock; xiangqi alone
+  still asks for more time.
+- Build 37 (main) against FSF 2100 in queue278: standard +103.7, +92.5;
+  xiangqi +17.4, +47.2; crazyhouse -103.7, -98.1; capablanca -139.0.
 
 ### Queue273, the A/A result (stopped after round a)
 
