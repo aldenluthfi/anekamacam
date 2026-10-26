@@ -142,11 +142,11 @@ const ASPIRATION_RATIO: u32 = 30;
 /// the clock then plans for `CLOCK_HAND_RATIO` of the moves, over
 /// `COEFFICIENT_SCALE`:
 ///
-/// - `CLOCK_MOVES`      : 30 moves
-/// - `CLOCK_HAND_RATIO` : 50%, 15 moves where the captures fill the hand
+/// - `CLOCK_MOVES`      : 20 moves
+/// - `CLOCK_HAND_RATIO` : 75%, 15 moves where the captures fill the hand
 ///
-const CLOCK_MOVES: u32 = 30;
-const CLOCK_HAND_RATIO: u32 = 500;
+const CLOCK_MOVES: u32 = 20;
+const CLOCK_HAND_RATIO: u32 = 750;
 
 /// Reverse futility margin
 ///
