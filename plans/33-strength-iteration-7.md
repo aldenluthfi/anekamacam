@@ -2353,6 +2353,18 @@ round a (FSF's phase from its xiangqi values):
   mobmove keep their branches and binaries for a retest on build 37.
 - Deleted: zhclock and tclock (merged), pim, zhscale, parity, the danger
   probe builds and their binaries.
+- Build 37's clock (queue277 round b): lost games end with 1.9 s in
+  standard (build 36 3.3 s) and 2.4 s in crazyhouse (5.0 s); FSF's near
+  0.7 s. Moves 0 to 10 take 362 ms (FSF 756).
+
+### tclock15
+
+- tclock15 (`plan33-tclock15`, 75a290e, from build 37): 15 moves, 11
+  where the captures fill the hand. T2 (15 moves) lost 36 in grand on
+  build 8's clock, where a move used more of its share and grand's games
+  are long; the test set still leaves time at the end on build 37.
+- Smoke 4 of 4 in standard, no forfeits. Queue278: build 37 and
+  tclock15, all four variants, three rounds.
 
 ### Queue273, the A/A result (stopped after round a)
 
