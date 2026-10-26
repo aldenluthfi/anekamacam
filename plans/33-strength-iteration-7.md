@@ -2178,6 +2178,21 @@ round a (FSF's phase from its xiangqi values):
   arm gains (tpiece in capablanca 3.2% and 3.5% against 2.9% and 3.3%):
   it does not follow the Elo and is not a lead.
 
+### Queue272, zhscale in crazyhouse (cut after round b)
+
+| Round | main | zhscale | zhscale - main |
+|-------|-----:|--------:|---------------:|
+| a (main first) | -186.2 | -159.8 | +26.4 |
+| b (zhscale first) | -135.0 | -179.5 | -44.5 |
+
+- Mean -9.0. As a change in crazyhouse alone it needs near +44 over
+  three rounds; round c would have to give near +150. Cut, no forfeits;
+  not merged.
+- So doubling all the parts against the material, through the cause
+  the probes named, plays no better than the size moves before it (KH,
+  DW). The size of the crazyhouse terms against FSF's is closed as a
+  lead: four tries, none above noise.
+
 ### pim, the move of a stopped depth
 
 - An iteration that the clock stops was thrown away whole; the move of
