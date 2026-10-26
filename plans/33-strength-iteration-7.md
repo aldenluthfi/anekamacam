@@ -2374,6 +2374,16 @@ round a (FSF's phase from its xiangqi values):
 - Build 37 (main) against FSF 2100 in queue278: standard +103.7, +92.5;
   xiangqi +17.4, +47.2; crazyhouse -103.7, -98.1; capablanca -139.0.
 
+### parity37, the bundle on build 37
+
+- The eval ports were measured on build 36's clock (depth near 11 in
+  0.6 s); build 37 searches near two plies deeper. The worth of a static
+  term to a search can change with its depth, so the bundle plays again:
+  parity37 (`plan33-parity37`, eadaf97, from build 37) holds tpiece,
+  dropmob and kring, merged as in parity.
+- Smoke 1 of 4 in crazyhouse, no forfeits. Queue279: build 37 and
+  parity37, all four variants, three rounds.
+
 ### Queue273, the A/A result (stopped after round a)
 
 | Variant | main (first) | copy (second) | copy - main |
