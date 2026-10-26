@@ -2420,6 +2420,72 @@ round a (FSF's phase from its xiangqi values):
 - Smoke 4 of 4 in standard, no forfeits. Queue280: build 37 and pawnmg,
   standard, crazyhouse and capablanca, three rounds; xiangqi's tree is
   the same (its file is the same), so it counts 0 in the mean of four.
+- Round a, standard: build 37 +88.7, pawnmg +139.0. Speed probes ran at
+  normal priority for near two minutes of build 37's run, with half the
+  processor free.
+
+### Capablanca falls on build 37: search or evaluation
+
+- Falls (the rule of "Where the losses come from") in queue278 and
+  queue279 round a, build 37 in capablanca: 562, 2.6% and 2.8% of our
+  moves. 30 falls from 0 or more, scored by our search at 250, 1000 and
+  4000 ms and by FSF's (classical, full strength) at 250 and 1000 ms.
+  The machine ran the queue meanwhile: our depth 3 to 8 at 250 ms, 9 to
+  15 at 4000 ms; FSF's 9 to 14. Under `movetime` this FSF stops near
+  130 ms, so its scores use at most the time ours had.
+- In 17 of the 30, FSF's score is 250 cp or more under ours at 4 s, so
+  16 times the time does not show us the fall. Each of the 17 then walks
+  FSF's depth 16 line: our score at 1 s after each of its first ten
+  plies. In 4, our search agrees within one to three plies (search: the
+  reply is found once it is on the board). In 9 to 10, we stay 200 to 600
+  cp above FSF along the whole line, and our static score at its end
+  agrees with our search (evaluation).
+- At the ends of those lines, FSF's King danger row against our royal
+  terms (build 37 less the build with them off): of the 9 ends where
+  FSF's row is 3 pawns or more, 5 have an attacker with an archbishop and
+  no queen or chancellor. There FSF has 3.4 to 19.7 pawns, ours 0.1 to
+  1.7. In the other four, one attacker has no major at all and two
+  have a queen (FSF 14.5 and 4.4, ours 1.0 and 3.1).
+- Cause: the cut for a missing major (`DANGER_NO_MAJOR`, FSF's -873)
+  reads the major role, the dearest ceil(20%) of the piece types: in
+  capablanca the chancellor and the queen of seven types. FSF's
+  `major_pieces` holds the queen, archbishop, chancellor, aiwok and
+  amazon. So an attack led by an archbishop loses 53% of a full ring and
+  most often falls under the threshold.
+- Not a lever: the archbishop's value. It is cheap against FSF (A over Q
+  0.75 and 0.66 against 0.87 and 0.82), but trades that our values rate
+  fair and FSF's rate 2.4 pawns or more bad come in 30 of 1200 build 37
+  games (our score 0.28 in them, 0.33 over all archbishop losses), near
+  1 to 2 Elo.
+- Noted, not acted on: nodes a second from the start position, ours over
+  FSF's on this machine under load, standard 0.54, xiangqi 0.73,
+  crazyhouse 0.61, capablanca 0.48 (plan 29, build 14, laptop: 0.84 in
+  standard). The builds with threats, mobility or royal safety off run
+  at near the same speed, so the eval terms are not the gap.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| KD (plan 29) | the danger sum and its cut, merged | | | |
+| A13 (build 35) | two-means roles for every reader: capablanca -12.3, mean +4.7, closed | within one σ | the role read by the imbalance, the material test and the cut | dmajor changes only the cut; the cause is from the falls; build 37 |
+
+### dmajor, the majors of the danger cut
+
+- dmajor (`plan33-dmajor`, 6c71521, from build 37): a major of the cut
+  is a big piece worth more than the geometric mean of the cheapest and
+  the dearest big piece (opening values). The role, the imbalance and the
+  material test stay. Standard and crazyhouse keep the queen (with drops
+  the cut is 0); capablanca adds the archbishop to the chancellor and the
+  queen; xiangqi adds the horse to the cannon and the chariot.
+- At the five line ends, our royal terms (dmajor less the build with
+  them off) against FSF's row: +0.71 to +2.72 (+3.36), +0.06 to +3.02
+  (+6.22), +0.85 to +2.49 (+7.05), +0.16 to -1.13 (-4.59), -1.69 to
+  -3.12 (-19.74).
+- Seeded bench, depth 8: standard 82548 and crazyhouse 333912 nodes, the
+  same as build 37; xiangqi 254503 (258386), capablanca 376325 (391675).
+  Smoke 1-3 in capablanca, no forfeits.
+- Queue281 (after queue280): build 37 and dmajor, xiangqi and
+  capablanca, three rounds; standard and crazyhouse count 0 in the mean
+  of four.
 
 ### Queue273, the A/A result (stopped after round a)
 
