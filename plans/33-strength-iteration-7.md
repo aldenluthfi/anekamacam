@@ -2483,9 +2483,46 @@ round a (FSF's phase from its xiangqi values):
 - Seeded bench, depth 8: standard 82548 and crazyhouse 333912 nodes, the
   same as build 37; xiangqi 254503 (258386), capablanca 376325 (391675).
   Smoke 1-3 in capablanca, no forfeits.
-- Queue281 (after queue280): build 37 and dmajor, xiangqi and
-  capablanca, three rounds; standard and crazyhouse count 0 in the mean
-  of four.
+- Queue281 (after queue280, on the build that queue280 leaves): main
+  and dmajor, xiangqi and capablanca, three rounds; standard and
+  crazyhouse count 0 in the mean of four.
+
+### Crazyhouse falls on build 37
+
+- The same probe on 30 crazyhouse falls (780 in queue278 and queue279
+  round a, 6.4% and 6.8% of our moves): at 250 ms our depth is 2 to 7,
+  FSF's 9 to 12. In 20 of the 30, FSF's score is 250 cp or more under
+  ours at 4 s.
+- Along FSF's lines: in 4 our search agrees after three to seven plies;
+  in most of the others we stay 300 to 2500 cp above FSF for all ten
+  plies, and our static score at the end agrees with our search.
+- At the line ends FSF's King danger row is 7 to 21 pawns in 12 of the
+  20 and carries most of its total; our royal terms there are 0.2 to 7.5
+  pawns, some of the other sign. In FSF a drop variant takes the opening
+  danger in both phases, scaled by the material density; ours keeps the
+  hand in the phase score, so crazyhouse stays near the opening and the
+  phase is not the cause.
+- The size of the crazyhouse royal terms is closed (KH, DW, zhscale and
+  the hand inputs, four tries, none above noise). The probe adds no new
+  cause, so it gets no candidate.
+
+### tstab, more time for an unstable root
+
+- TI (plan 29) let an unstable root (the best move changed, or the score
+  fell by more than the aspiration delta) start a new depth until half
+  the time, a stable one until a quarter: shogi -19.8 ± 12.3 on build
+  10, cause not measured ("the clock has no reserve"). Build 37 ends its
+  lost games with near 2 s of 10 left; the test set and the depth
+  differ.
+- tstab (`plan33-tstab`, 3066e53, from build 37) is TI's form: the
+  parts are `DEPTH_START_PART` (4) and `UNSTABLE_START_PART` (2).
+  Fixed-depth nodes equal build 37's (standard depth 8, capablanca depth
+  7). On a 30 s + 100 ms clock, 20 standard positions of moves 20 to 30,
+  two passes: build 37 1193 and 1153 ms a move (depth 12.5, 12.4),
+  tstab 1303 and 1284 ms (12.6, 12.7). Smoke 3-1 in standard, no
+  forfeits.
+- Queue282, after queue281: main and tstab, all four variants, three
+  rounds.
 
 ### Queue273, the A/A result (stopped after round a)
 
