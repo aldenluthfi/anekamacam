@@ -2220,8 +2220,31 @@ round a (FSF's phase from its xiangqi values):
   reach. Bench nodes equal main's in standard, crazyhouse and capablanca
   (no non-pawn piece there moves apart from its captures) and change in
   xiangqi (the cannon).
-- Static check in xiangqi next (mobmove minus `offmobility`, FSF's
-  Mobility row).
+- Static check in xiangqi (mobmove minus `offmobility`, FSF's Mobility
+  row, one ply in 24 of queue267 round a): 0.41 to 0.77 (opening 0.88,
+  endgame 0.69); sd 0.29 against FSF's 0.72.
+- Smoke 2 of 4 in xiangqi, no forfeits. Queue274: main and mobmove,
+  xiangqi only (the others search the same tree), three rounds.
+
+### Queue273, the A/A result (stopped after round a)
+
+| Variant | main (first) | copy (second) | copy - main |
+|---------|-------------:|--------------:|------------:|
+| standard | +66.8 | +88.7 | +21.9 |
+| xiangqi | -10.4 | +22.6 | +33.0 |
+| crazyhouse | -149.3 | -190.8 | -41.5 |
+| capablanca | -184.0 | -96.2 | +87.8 |
+
+- Two copies of one binary, one round: the mean of four is +25.3, which
+  a candidate would read as a gain. The spread of the four (sd near 53)
+  is above the σ near 35 that the harness error gives a difference of
+  two rounds of 200. No steady first-arm edge: the second arm led in
+  three of four.
+- So one-round differences of 50 to 90 are noise here, the capablanca
+  and crazyhouse first rounds of tpiece, tqueen, kring and parity among
+  them. The three-round rule is the guard; a cut on one round only stops
+  a run that cannot pass, it shows no loss. The order hypothesis above
+  is not supported; the alternation stays as it costs nothing.
 
 ### pim, the move of a stopped depth
 
