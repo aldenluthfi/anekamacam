@@ -679,14 +679,15 @@ enum SPRTGameOutcome {
 /// The referee `State` of slot 0 also goes to the board view, so a person
 /// can watch one game of the match.
 ///
-/// `record` has one `fen;move;score` row for each engine move of the game.
+/// `record` has one `fen;move;score` row for each engine move of the game,
+/// with the clock of the mover when it was asked to move.
 ///
 struct GameManager {
     slot: usize,                                                                /* index of the slot, 0 is watched    */
     state: State,                                                               /* neutral referee; history is game   */
     white: SPRTChild,                                                           /* child currently playing White      */
     black: SPRTChild,                                                           /* child currently playing Black      */
-    record: Vec<String>,                                                        /* rows of the current game           */
+    record: Vec<(String, u128)>,                                                /* rows of the current game, clocks   */
 }
 
 /// GameManager driver
@@ -902,9 +903,16 @@ impl GameManager {
 
             let move_string = match result {
                 Ok((Some(text), score)) if text != "(none)" => {
-                    self.record.push(format!(
+                    let clock_ms = match time_control {
+                        SPRTTimeControl::Clock { .. } => clocks[side as usize],
+                        SPRTTimeControl::MoveTime(_) => 0,
+                    };
+
+                    let row = format!(
                         "{};{};{}", format_fen(state, dict), text, score,
-                    ));
+                    );
+
+                    self.record.push((row, clock_ms));
                     text
                 }
                 Ok(_) => {
@@ -1312,7 +1320,7 @@ impl SPRTTally {
 /// - `Stop(reason)`         : the slot cannot continue, the verdict
 ///
 enum SPRTReport {
-    Game(f64, f64, char, Vec<String>),                                          /* score of A, of White, A's colour   */
+    Game(f64, f64, char, Vec<(String, u128)>),                                  /* score of A, of White, A's colour   */
     Forfeit(usize, SPRTForfeit),                                                /* engine 0 = A, 1 = B; the reason    */
     Pair(f64),                                                                  /* mean score of the pair for A       */
     Stop(String),                                                               /* the slot failed, the run stops     */
@@ -1520,10 +1528,11 @@ fn run_slot(
 ///
 /// Each game also goes to `res/sprt/{variant}/latest.games`, one row for
 /// each engine move: game, position, move, score of the mover, result for
-/// White, colour of engine A.
+/// White, colour of engine A, the mover's clock in ms when asked to move
+/// (0 under a move time).
 ///
 /// ```text
-/// 12;<fen>;e2e4;cp 34;1;w
+/// 12;<fen>;e2e4;cp 34;1;w;8730
 /// ```
 ///
 /// Params:
@@ -1590,10 +1599,10 @@ pub fn run_sprt(template: &State, settings: &SPRTMatch) {
             match report {
                 SPRTReport::Game(score_a, white_score, color_a, rows) => {
                     tally.add_game(score_a);
-                    for row in rows {
+                    for (row, clock_ms) in rows {
                         let _ = writeln!(
-                            game_file, "{};{};{};{}",
-                            games, row, white_score, color_a,
+                            game_file, "{};{};{};{};{}",
+                            games, row, white_score, color_a, clock_ms,
                         );
                     }
                     games += 1;
