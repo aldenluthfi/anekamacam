@@ -21,7 +21,9 @@ is closed (queue261). Passed pawns in FSF's form merged as build 36
 (queue262, +31.4 ± 9.0). The test opponent is FSF at `UCI_Elo` 2100 from
 queue262 on, on the Windows machine. Queues 267 to 272 cut nine
 candidates near +10 or below; an A/A run (queue273) put one-round noise
-at up to 88 Elo between two copies. At build 40, and at every tenth
+at up to 88 Elo between two copies. The clock now plans for 20 moves
+(15 where captures fill the hand): build 37, +36.9 ± 10.4 (queue277).
+At build 40, and at every tenth
 build after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
 
@@ -2321,6 +2323,36 @@ round a (FSF's phase from its xiangqi values):
 - At 30 s on the clock: standard 1285 ms, depth 13 (main 577, depth 11);
   crazyhouse 1430 ms, depth 12 (742, 11). Smoke 2-2 in standard, no
   forfeits. Queue277: main and tclock, all four variants, three rounds.
+
+### Queue277, tclock; merged as build 37
+
+| Round | Arm | standard | xiangqi | crazyhouse | capablanca |
+|-------|-----|---------:|--------:|-----------:|-----------:|
+| a | main | +56.1 | +26.1 | -172.8 | -129.0 |
+| a | tclock | +107.5 | +27.9 | -129.0 | -125.0 |
+| b | tclock | +109.5 | +63.2 | -115.2 | -98.1 |
+| b | main | +66.8 | +19.1 | -172.8 | -92.5 |
+| c | main | +65.0 | -26.1 | -119.1 | -147.2 |
+| c | tclock | +96.2 | +70.4 | -98.1 | -92.5 |
+
+| Variant | tclock - main | σ |
+|---------|--------------:|---:|
+| standard | +41.8 | 19.7 |
+| xiangqi | +47.5 | 20.1 |
+| crazyhouse | +40.8 | 21.6 |
+| capablanca | +17.7 | 21.6 |
+| mean of four | +36.9 | 10.4 (3.6σ) |
+
+- No variant below 0, no forfeits in 2400 games. Merged as build 37
+  (main f5970fe: zhclock and tclock). At 30 s on the clock build 37
+  reaches depth 13 in near 1.1 s where build 36 reached 11 in 0.6 s.
+- So the time left unspent was the largest lever found since passed
+  pawns, and it came from the match record, not from a fit to FSF.
+- The closed eval ports were measured on build 36's clock. With deeper
+  searches their worth can differ; tpiece, tqueen, dropmob, kring and
+  mobmove keep their branches and binaries for a retest on build 37.
+- Deleted: zhclock and tclock (merged), pim, zhscale, parity, the danger
+  probe builds and their binaries.
 
 ### Queue273, the A/A result (stopped after round a)
 
