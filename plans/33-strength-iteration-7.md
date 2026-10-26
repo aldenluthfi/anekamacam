@@ -2311,6 +2311,17 @@ round a (FSF's phase from its xiangqi values):
   and spending it in crazyhouse played +33. The next try is the general
   form, on the mean of four.
 
+### tclock, 20 moves
+
+- tclock (`plan33-tclock`, 8a75e2a, on zhclock): the clock plans for 20
+  moves, and 15 where the captures fill the hand (75%). T3 chose 30 over
+  20 by +15.3 ± 10.5 in grand alone, where games are long; the clock
+  record shows the reserve left unspent in all four test variants, which
+  grand's runs could not show.
+- At 30 s on the clock: standard 1285 ms, depth 13 (main 577, depth 11);
+  crazyhouse 1430 ms, depth 12 (742, 11). Smoke 2-2 in standard, no
+  forfeits. Queue277: main and tclock, all four variants, three rounds.
+
 ### Queue273, the A/A result (stopped after round a)
 
 | Variant | main (first) | copy (second) | copy - main |
