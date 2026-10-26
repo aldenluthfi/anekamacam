@@ -1060,7 +1060,7 @@ macro_rules! pawn_structure {
 /// - weak      : ring squares the enemy attacks and we do not hold twice
 /// - hits      : the enemy hits on the local ring, one for each piece
 /// - checks    : an enemy piece type that reaches a safe check square
-/// - no major  : the enemy has no major piece, less danger
+/// - no major  : the enemy has no major of the cut, less danger
 ///
 /// A ring attacker is an enemy piece whose map meets the ring. A safe check
 /// square is one we do not attack, or a weak one the enemy holds twice. A
@@ -1442,7 +1442,11 @@ macro_rules! attack_terms {
                 }
 
                 let scale = COEFFICIENT_SCALE as i64;
-                let major_gone = $state.major_pieces[them] == 0;
+                let major_gone = !(0..statics.pieces.len()).any(|index| {
+                    p_color!(&statics.pieces[index]) as usize == them
+                        && eval.danger_majors[index]
+                        && $state.piece_count[index] > 0
+                });
                 let sum = (attackers[them] + pawn_hits_ring)
                         * attackers[them] * eval.danger_attacker as i64
                     + weak_ring * eval.danger_weak as i64

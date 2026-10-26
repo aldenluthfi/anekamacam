@@ -466,7 +466,9 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 /// A weak ring square is one the enemy attacks and we do not hold twice. A
 /// ring hit lands on a ring square next to the royal. An unsafe check is a
 /// check square an enemy type reaches when none of its squares is safe. A
-/// safe check counts once for each enemy type.
+/// safe check counts once for each enemy type. A major of the cut is a big
+/// piece worth more than the geometric mean of the cheapest and the dearest
+/// big pieces.
 ///
 /// A sum `d` past the threshold costs `min(d, cap) * d` in the opening and
 /// `d` in the endgame, scaled so that a full weak ring costs
@@ -654,6 +656,7 @@ pub struct EvalParams {
     pub danger_attacker: i32,                                                   /* of each attacker, times attackers  */
     pub danger_check: [i32; 2],                                                 /* of a type with 1, more safe checks */
     pub danger_no_major: i32,                                                   /* cut when the enemy has no major    */
+    pub danger_majors: Vec<bool>,                                               /* piece index to a major of the cut  */
     pub danger_base: i32,                                                       /* added to each sum                  */
     pub danger_threshold: i32,                                                  /* sum that costs nothing             */
     pub danger_cap: i32,                                                        /* opening cost is linear past it     */
@@ -3603,7 +3606,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
 /// - pair      : a part again, only for pieces that reach half the board
 /// - threats   : a part for each attack kind, opening then endgame
 /// - mobility  : a part, opening then endgame
-/// - danger    : the parts of the king danger sum, and its cost
+/// - danger    : the parts of the king danger sum, its majors and its cost
 ///
 /// Mobility counts twice when the captures fill the hand or with a count
 /// of checks. The weak square of the danger sum comes from the ring size,
@@ -3667,6 +3670,18 @@ pub fn derive_advantage_parameters(state: &mut State) {
         / scale;
     let danger_no_major = DANGER_NO_MAJOR as u64 * (1 - drop)
         / (1 + racing);
+    let big_values = state.statics.pieces.iter()
+        .filter(|piece| p_is_big!(piece))
+        .map(|piece| p_ovalue!(piece) as u64);
+    let cheapest_big = big_values.clone().min().unwrap_or(0);
+    let dearest_big = big_values.max().unwrap_or(0);
+    let danger_majors = state.statics.pieces.iter()
+        .map(|piece| {
+            let value = p_ovalue!(piece) as u64;
+
+            p_is_big!(piece) && value * value > cheapest_big * dearest_big
+        })
+        .collect();
     let danger_cost = DANGER_COST_RATIO.map(|part| {
         (dearest * part as u64 / scale) as i32 * mated as i32
     });
@@ -3733,6 +3748,7 @@ pub fn derive_advantage_parameters(state: &mut State) {
     statics.eval.danger_attacker = DANGER_ATTACKER as i32;
     statics.eval.danger_check = DANGER_CHECK.map(|part| part as i32);
     statics.eval.danger_no_major = danger_no_major as i32;
+    statics.eval.danger_majors = danger_majors;
     statics.eval.danger_base = DANGER_BASE as i32;
     statics.eval.danger_threshold = DANGER_THRESHOLD as i32;
     statics.eval.danger_cap = DANGER_CAP as i32;
