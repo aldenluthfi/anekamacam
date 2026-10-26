@@ -2392,6 +2392,35 @@ round a (FSF's phase from its xiangqi values):
   their branches stay as the record of the forms, their binaries are
   deleted.
 
+### pawnmg, the pawn's opening value
+
+- Our standard values, opening: P 100, N 383, R 621, Q 1186 (N 3.8 R
+  6.2 Q 11.9 pawns); endgame P 101, N 383, R 773, Q 1454. FSF's middle
+  game: N 6.2, R 10.1, Q 20.1 pawns; endgame N 4.1, R 6.6, Q 12.9. Our
+  endgame ratios are near FSF's, our opening pawn is near 1.6 times as
+  dear against the pieces. FSF's pawn is 126 in the middle game and 208
+  in the endgame (0.61); its pieces change much less (near 0.92).
+- Past tries of the value table: plan 27 (the shift flattens all ratios;
+  values in proportion to the raw value too steep, not played); A1 (the
+  map of the totals, closed without games: compounds stay low); plan 28
+  (a learned value model, not better on unseen variants). None split a
+  pawn's value by phase.
+- pawnmg (`plan33-pawnmg`, 70c6400, from build 37): a pawn (a piece with
+  a pawn slot) that promotes to the dearest piece has an opening value
+  of `PAWN_OPENING_RATIO` (60.6%, FSF's 126 over 208) of its endgame
+  value. Its worth is the promotion, which comes as the board empties.
+  The opening pawn over the knight in standard goes from 0.26 to 0.16,
+  FSF's middle-game 0.16.
+- The parameter files were made again from a clone of the tree without
+  them: 24 change (the chess-like variants; the pawn opening value 100 to
+  59 to 64, and the tables built from it by 1), 20 are the same byte for
+  byte (xiangqi, the shogi family, makruk, grand, whose pawn promotes
+  only to a captured piece, and others). A knight for a pawn at the
+  start: 169 to 216 cp.
+- Smoke 4 of 4 in standard, no forfeits. Queue280: build 37 and pawnmg,
+  standard, crazyhouse and capablanca, three rounds; xiangqi's tree is
+  the same (its file is the same), so it counts 0 in the mean of four.
+
 ### Queue273, the A/A result (stopped after round a)
 
 | Variant | main (first) | copy (second) | copy - main |
