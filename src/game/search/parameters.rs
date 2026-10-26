@@ -288,6 +288,14 @@ const PROXIMITY_RATIO: u32 = 100;
 ///
 const HAND_POWER: u32 = 700;
 
+/// PAWN_OPENING_RATIO
+///
+/// The opening value of a pawn that promotes to the dearest piece, over its
+/// endgame value and `COEFFICIENT_SCALE`: 60.6%, Fairy-Stockfish's pawn of
+/// 126 in the middle game over 208 in the endgame.
+///
+const PAWN_OPENING_RATIO: u32 = 606;
+
 /// Check race
 ///
 /// The worth of the checks that a colour has given, in a variant with a
@@ -2190,6 +2198,12 @@ fn captures_fill_hand(state: &State) -> bool {
 /// 3. subtract the offset from the two values of each piece
 /// 4. with free drops, apply the hand power to each value over the cheapest
 /// 5. if the largest value is above 14 bits, scale the table down to fit
+/// 6. a pawn that promotes to the dearest piece is cheaper in the opening
+///
+/// Such a pawn's worth is its promotion, which comes as the board empties,
+/// so its opening value is `PAWN_OPENING_RATIO` of its endgame value. A
+/// pawn is a piece with a pawn slot (`derive_pawn_slots`); the dearest
+/// piece is the one with the highest endgame value that is not royal.
 ///
 /// Params:
 /// - state: &mut State -> variant with the material values to derive
@@ -2262,6 +2276,36 @@ fn derive_material_values(state: &mut State) {
             &mut state.static_mut().pieces[white_index],
             ovalue, evalue, false, false
         );
+    }
+
+    let (slots, _) = derive_pawn_slots(state);
+    let dearest = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_evalue!(piece) as i32)
+        .max()
+        .unwrap_or(0);
+
+    for (index, slot) in slots.into_iter().enumerate() {
+        let piece = &state.statics.pieces[index];
+
+        if slot == NO_PAWN
+            || p_color!(piece) != WHITE
+            || derive_promotion_target(state, index as PieceIndex, true)
+                < dearest {
+            continue;
+        }
+
+        let evalue = p_evalue!(piece);
+        let ovalue = (evalue as u32 * PAWN_OPENING_RATIO
+            / COEFFICIENT_SCALE as u32).max(1) as u16;
+        let black_index = state.statics.piece_swap_map[index] as usize;
+
+        for target in [index, black_index] {
+            set_piece_dynamic_parameters(
+                &mut state.static_mut().pieces[target],
+                ovalue, evalue, false, false
+            );
+        }
     }
 }
 
