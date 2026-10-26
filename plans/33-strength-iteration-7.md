@@ -2229,6 +2229,34 @@ round a (FSF's phase from its xiangqi values):
   endgame 0.69); sd 0.29 against FSF's 0.72.
 - Smoke 2 of 4 in xiangqi, no forfeits. Queue274: main and mobmove,
   xiangqi only (the others search the same tree), three rounds.
+- Queue274 round a: main +47.2, mobmove +6.9 (-40.3). As a xiangqi-only
+  change it needs near +44 over three rounds; the two rounds left would
+  need near +86 each. Cut, no forfeits; not merged.
+
+### What the ports since pfsf show
+
+| Port | Fit before, after | Play (mean of four, or the one variant) |
+|------|-------------------|------------------------------------------|
+| pfsf (merged, build 36) | 0.56, 0.85 | +31.4 |
+| pstr2 | 0.75, 0.93 | +0.1 |
+| KH | 0.86, 0.90 | +1.3 (crazyhouse) |
+| tpiece | 0.59, 0.74 | +10.6 |
+| tqueen | 0.59, 0.80 | +9.9 |
+| dropmob | 0.70, 0.92 | +18.7 (crazyhouse) |
+| kring | 0.61, 0.71 | near +4 |
+| zhscale | sizes near FSF's | -9.0 (crazyhouse) |
+| mobmove | 0.41, 0.77 | -40.3 (xiangqi, one round) |
+
+- A rise of the static fit to FSF's term has not predicted a gain in
+  play, eight times out of nine. The method that picked these leads (the
+  term with the poorest fit and the largest FSF worth) is refuted as a
+  predictor for our engine. Not known why pfsf is the one exception; its
+  term was the one with a large worth to us before (passed pawns, -6 in
+  queue256 where FSF's was 112 to 229).
+- Every gain these ports could still hold is near the size that one
+  round of noise moves (queue273). Under the merge rule (three rounds, 2σ
+  on the mean of four) a gain under near +20 on the mean, or near +44 in
+  one variant, cannot be shown.
 
 ### Queue273, the A/A result (stopped after round a)
 
