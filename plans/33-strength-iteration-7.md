@@ -2257,6 +2257,41 @@ round a (FSF's phase from its xiangqi values):
   round of noise moves (queue273). Under the merge rule (three rounds, 2σ
   on the mean of four) a gain under near +20 on the mean, or near +44 in
   one variant, cannot be shown.
+- The user's call (2026-10-26): keep the rule, look for larger levers
+  (search, time use, how games are lost).
+
+### Time use (queue275, the clock in the match record)
+
+- The match record now holds the mover's clock at each `go` (ec995ec,
+  merged: the harness only, the engine's play is the same). Queue275 is
+  one round of main with it.
+
+| Our moves | standard: ours / FSF clock, spent | xiangqi | crazyhouse | capablanca |
+|-----------|-----------------------------------|---------|------------|------------|
+| 0-10 | 8992 / 6766, 278 / 760 | 8970 / 6680, 277 / 778 | 8961 / 6509, 285 / 806 | 9002 / 6666, 277 / 784 |
+| 10-20 | 7086 / 2262, 229 / 316 | 7031 / 2056, 225 / 313 | 6925 / 1971, 240 / 294 | 7065 / 2176, 234 / 308 |
+| 20-30 | 5662 / 971, 193 / 144 | 5586 / 935, 194 / 135 | 5341 / 942, 188 / 125 | 5548 / 966, 195 / 140 |
+| 30-45 | 4358 / 763, 165 / 108 | 4269 / 739, 159 / 107 | 4142 / 746, 159 / 96 | 4226 / 754, 160 / 104 |
+| 45-70 | 3134 / 739, 135 / 84 | 2964 / 666, 130 / 100 | 2599 / 619, 126 / 96 | 2928 / 723, 128 / 79 |
+
+- Our clock at our last move in lost games (median): standard 3.3 s,
+  xiangqi 4.3 s, crazyhouse 5.0 s, capablanca 3.7 s; FSF ends near
+  0.6 to 0.8 s. In crazyhouse a game is near 30 of our moves, so near
+  38% of our time (10 s and the increments) is never spent.
+- Cause: a move uses near 0.67 of its share (remaining / 30 plus the
+  increment), because a depth may start only in the first quarter of
+  the budget; at that rate the clock settles near 1.5 s and a game of
+  30 to 60 moves ends far above it. FSF spends near 8% of its clock a
+  move at first and then plays on the increment.
+- Past tries (plan 27): T1 (a depth may start until half the budget)
+  -34.6 in grand; T1b (a quarter) +105.8, merged; T2 (15 moves) -36 in
+  grand, as grand's long games ran short later; T3 (30 moves) +15.3,
+  merged; T4 (40 moves) +6.6. All in grand, where games are long.
+- zhclock (`plan33-zhclock`, from main): where the captures fill the
+  hand, the clock plans for half the moves (15). No material leaves such
+  a game, so it ends by a mate and sooner; it is the variant that wastes
+  the most, and grand's long games (T2's loss) do not change. Only
+  crazyhouse changes.
 
 ### Queue273, the A/A result (stopped after round a)
 
