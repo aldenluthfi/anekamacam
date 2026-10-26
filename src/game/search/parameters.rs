@@ -135,6 +135,19 @@ const REDUCTION_TACTICAL_CHECK_DIVISOR: u32 = 4500;
 ///
 const ASPIRATION_RATIO: u32 = 30;
 
+/// Clock moves
+///
+/// The moves a clock without `movestogo` plans for. Where the captures fill
+/// the hand, no material leaves the game, so it ends by a mate and sooner;
+/// the clock then plans for `CLOCK_HAND_RATIO` of the moves, over
+/// `COEFFICIENT_SCALE`:
+///
+/// - `CLOCK_MOVES`      : 30 moves
+/// - `CLOCK_HAND_RATIO` : 50%, 15 moves where the captures fill the hand
+///
+const CLOCK_MOVES: u32 = 30;
+const CLOCK_HAND_RATIO: u32 = 500;
+
 /// Reverse futility margin
 ///
 /// The reverse futility margin. The static evaluation must be this much
@@ -664,6 +677,7 @@ pub struct SearchParams {
     pub lmp_count: Vec<usize>,                                                  /* moves ordered, improving major     */
     pub see_allowance: Vec<i32>,                                                /* loss a capture may show, by depth  */
     pub qsearch_delta: i32,                                                     /* gain a leaf capture must promise   */
+    pub clock_moves: u32,                                                       /* moves a clock with no count plans  */
 }
 
 /*----------------------------------------------------------------------------*\
@@ -1744,6 +1758,7 @@ fn dearest_piece_value(state: &State) -> u64 {
 /// - late move count  : no material, depth squared
 /// - exchange         : most valuable piece, a step for each depth, 1 row
 /// - quiescence delta : most valuable piece
+/// - clock moves      : no material, fewer where the captures fill the hand
 ///
 /// The cheapest piece is 100 in all variants, so the most valuable piece
 /// shows the value scale. Razoring and ProbCut use the mean piece, because
@@ -1879,8 +1894,13 @@ pub fn derive_search_parameters(state: &mut State) {
         |depth, moves| depth.ln() * moves.ln(),
     );
 
+    let clock_moves = match captures_fill_hand(state) {
+        true => CLOCK_MOVES * CLOCK_HAND_RATIO / COEFFICIENT_SCALE as u32,
+        false => CLOCK_MOVES,
+    };
     let statics = state.static_mut();
 
+    statics.search.clock_moves = clock_moves;
     statics.search.reduction_quiet = quiet;
     statics.search.reduction_quiet_check = quiet_check;
     statics.search.reduction_tactical = tactical;
