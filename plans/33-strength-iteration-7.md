@@ -19,7 +19,11 @@ measures FSF's terms at the same budget. All audit arms are closed (A2
 and A3 queue252, A6 queue255). The danger sum's mobility input (kdmob)
 is closed (queue261). Passed pawns in FSF's form merged as build 36
 (queue262, +31.4 ± 9.0). The test opponent is FSF at `UCI_Elo` 2100 from
-queue262 on, on the Windows machine.
+queue262 on, on the Windows machine. Queues 267 to 272 cut nine
+candidates near +10 or below; an A/A run (queue273) put one-round noise
+at up to 88 Elo between two copies. At build 40, and at every tenth
+build after it, a sweep plays every variant that FSF plays against FSF
+at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
 
 ## Context
 
