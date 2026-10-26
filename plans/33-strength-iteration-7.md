@@ -2292,6 +2292,24 @@ round a (FSF's phase from its xiangqi values):
   a game, so it ends by a mate and sooner; it is the variant that wastes
   the most, and grand's long games (T2's loss) do not change. Only
   crazyhouse changes.
+- zhclock is d2149c3. At 30 s on the clock it spends 1122 ms where main
+  spends 552 (depth 12 against 11).
+
+### Queue276, zhclock in crazyhouse
+
+| Round | main | zhclock | zhclock - main |
+|-------|-----:|--------:|---------------:|
+| a (main first) | -155.5 | -141.0 | +14.5 |
+| b (zhclock first) | -168.4 | -77.7 | +90.7 |
+| c (main first) | -117.2 | -123.0 | -5.8 |
+
+- Mean +33.1 ± 20.8, 1.6σ; no forfeits. A change in crazyhouse alone
+  needs 2σ: not merged.
+- Its time use (round a): 442 ms a move in moves 0 to 10 (main 282), 301
+  in 10 to 20 (235); lost games end with 2.4 s on our clock (main 5.0).
+- The lead stands: the clock left unspent is real in all four variants,
+  and spending it in crazyhouse played +33. The next try is the general
+  form, on the mean of four.
 
 ### Queue273, the A/A result (stopped after round a)
 
