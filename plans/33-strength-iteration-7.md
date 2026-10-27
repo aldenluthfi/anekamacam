@@ -2672,6 +2672,28 @@ round a (FSF's phase from its xiangqi values):
   deleted. The endgame part of the table is not the lever the opening
   pawn was: matching FSF's endgame ratios plays the same.
 
+### xsee, a check with a hand keeps its ply only if it does not lose
+
+- xhand (no extension with a hand) lost 46 in crazyhouse; PCRH (the cut
+  of checks with a hand) gained 26; FSF extends a check only past depth
+  6. So some checks with a hand earn their ply and some do not. XS (a
+  check with a losing exchange is not extended, plan 27) gave shogi
+  +13.0 and grand -16.8, whose sacrifice-check mates need the ply; it
+  never played crazyhouse. xsee is XS for a mover with a hand only, so
+  grand and every variant without drops keep their trees.
+- xsee (`plan33-xsee`, 00f0b22, from build 39): with a piece in hand, a
+  check under the extension cap is taken back, priced by `see!` and made
+  again; it gets the extra ply only if the exchange does not lose.
+  `victim_value!` gives 0 for a move that takes nothing (no caller
+  reached that before). Seeded bench equal to build 39 in standard,
+  xiangqi and capablanca; crazyhouse depth 8 328175 nodes (442555). On
+  a 30 s + 100 ms clock, 20 crazyhouse positions, two passes: build 39
+  1549 and 1532 ms at depth 12.15 and 12.00, xsee 1367 and 1375 ms at
+  12.30 and 12.25. Smoke 1-3, no forfeits.
+- Queue283: build 39 and xsee, crazyhouse, three rounds. Rule set before
+  the games: it merges at +2σ in crazyhouse; between +1σ and +2σ it
+  plays three more rounds and merges at +2σ over six.
+
 ### Where build 37's time goes
 
 - The `hotpath` build of build 37, seeded bench at depth 7 (the large
