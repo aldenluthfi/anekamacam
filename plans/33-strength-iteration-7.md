@@ -2524,6 +2524,21 @@ round a (FSF's phase from its xiangqi values):
 - Queue282, after queue281: main and tstab, all four variants, three
   rounds.
 
+### Where build 37's time goes
+
+- The `hotpath` build of build 37, seeded bench at depth 7 (the large
+  blocks only; plan 32 found the small nested ones inflated). A node
+  costs 14.4 µs in capablanca. `eval::attack_terms` takes 12.4 µs a call
+  in capablanca, 8.1 in crazyhouse, 9.0 in xiangqi and 2.5 in standard
+  (whose bench is bare endings), at 0.48 calls a node in capablanca:
+  near 40% of the search time there.
+- Timers inside it (each costs near 0.4 µs, so only the order is read):
+  the map pass first, then the danger part, then pawn targets and passed
+  pawns; the goal race is near nothing.
+- A diagnostic that casts every map twice (the same output) benches the
+  same as build 37 within the noise of the loaded machine (±10%), so the
+  casts are not the cost. Finer speed work waits for a quiet machine.
+
 ### Queue273, the A/A result (stopped after round a)
 
 | Variant | main (first) | copy (second) | copy - main |
