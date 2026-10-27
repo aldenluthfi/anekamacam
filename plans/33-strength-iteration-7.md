@@ -2701,6 +2701,24 @@ round a (FSF's phase from its xiangqi values):
   gives its piece away (a sacrifice drop that opens the royal). The
   extension with a hand is closed in this direction.
 
+### nmeval, the null move's lead over beta
+
+- Our null move reduces `4 + d / 4`; FSF's adds `min((eval - beta) /
+  205, 3)`. Stage E (plan 1) played that term with an endgame
+  verification in a self-play pool: -3, neutral, no cause recorded. The
+  engine, the opponent and the test set have all changed since; the term
+  plays alone here.
+- nmeval (`plan33-nmeval`, 53ec589, from build 39): one more ply of
+  reduction for each `null_eval_unit` of lead (`NULL_EVAL_RATIO`, 8.1%
+  of the most valuable piece, FSF's 205 over its queen of 2538), at
+  most `NULL_EVAL_PLIES` (3). Derived at load, so no parameter file
+  changes. Seeded bench: standard the same (bare endings, no null move),
+  xiangqi 146815 (146946), capablanca 225325 (225368), crazyhouse 434332
+  (442555). On a 30 s + 100 ms clock, 20 standard positions, two passes:
+  build 39 1072 and 1066 ms at depth 14.10 and 14.00, nmeval 1169 and
+  1232 ms at 14.30 and 14.35. Smoke 4-0, no forfeits.
+- Queue284: build 39 and nmeval, all four variants, three rounds.
+
 ### Where build 37's time goes
 
 - The `hotpath` build of build 37, seeded bench at depth 7 (the large
