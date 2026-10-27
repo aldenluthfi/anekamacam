@@ -2693,6 +2693,13 @@ round a (FSF's phase from its xiangqi values):
 - Queue283: build 39 and xsee, crazyhouse, three rounds. Rule set before
   the games: it merges at +2σ in crazyhouse; between +1σ and +2σ it
   plays three more rounds and merges at +2σ over six.
+- Queue283, crazyhouse: build 39 -135.0, -139.0, -129.0; xsee -166.2,
+  -175.0, -177.2; xsee minus build 39 -38.5 ± 21.6 (-1.8σ). No forfeits.
+  Not merged; the branch stays as the record, its binary is deleted.
+- With xhand (-46.3), two cuts of the extension with a hand lose near
+  40: in crazyhouse the extra ply of a check pays even when the check
+  gives its piece away (a sacrifice drop that opens the royal). The
+  extension with a hand is closed in this direction.
 
 ### Where build 37's time goes
 
