@@ -26,8 +26,9 @@ at up to 88 Elo between two copies. The clock now plans for 20 moves
 A pawn that promotes to the dearest piece is cheaper in the opening:
 build 38, +27.1 ± 8.8 (queue280). An archbishop counts as a major for
 the danger cut: build 39, +15.2 ± 7.2 (queue281); tstab and xhand did
-not merge. Work is paused at build 39 (asked by the user, 2026-10-27).
-At build 40, and at every tenth
+not merge. The user asked (2026-10-27) to go on to build 40 and to play
+its sweep against FSF 2100 as well as 2000. At build 40, and at every
+tenth
 build after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
 
