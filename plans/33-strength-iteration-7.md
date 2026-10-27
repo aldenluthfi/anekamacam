@@ -2524,6 +2524,43 @@ round a (FSF's phase from its xiangqi values):
 - Queue282, after queue281: main and tstab, all four variants, three
   rounds.
 
+### xhand, no check extension with a piece in hand
+
+- Crazyhouse, one middlegame (a pawn in each hand): FSF reaches depth 8
+  in 9730 nodes (91 ms) and depth 11 in 765 ms; build 37 needs 58821
+  nodes (834 ms) for depth 8. The gap is there from depth 1 (164 nodes
+  against 64) and depth 5 (5194 against 570).
+- With a piece in hand a check is common (PCRH, build 27: it falls to the
+  move count, the exchange and LMR), but it still gets one more ply.
+  FSF extends a check only past depth 6 with `abs(eval) > 100`.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| XS2 (plan 27, a checking drop is not extended) | shogi -2.0 ± 12.4 | the deeper search on the slow shogi positions gives no strength | build 8, checks never cut; the crazyhouse arm stopped, never measured | PCRH cuts checks with a hand; crazyhouse plays; build 37 |
+| XS (a check with a losing exchange is not extended) | shogi +13.0, grand -16.8 | grand needs sacrifice checks extended | every variant | only a mover with a hand changes, so grand and every variant without drops keep their trees |
+| xf (no extension at depth 1) | +5.0 mean, closed | the saved tree buys less | every variant | |
+| PC26, CR26, PCR26, PCRH | PCRH merged (+26.2 in crazyhouse) | a hand makes every check common | the extension kept | the extension is the one check rule left with a hand |
+
+- xhand (`plan33-xhand`, 436792a, from build 37): while the mover holds
+  a piece in hand, a check gets no extra ply. Seeded bench equal to build
+  37 in standard, xiangqi and capablanca; crazyhouse depth 8 373897
+  nodes (333912). The middlegame above: depth 8 in 20792 nodes, depth 10
+  in 46113 (106930). On a 30 s + 100 ms clock, 20 crazyhouse positions of
+  moves 20 to 30, two passes: build 37 1891 and 1818 ms at depth 10.10
+  and 10.05, xhand 1622 and 1723 ms at 11.25 and 11.20. Smoke 2-2, no
+  forfeits.
+
+### Queue281, one session for dmajor, tstab and xhand
+
+- The arms share the base's rounds: each round plays main and tstab in
+  all four variants, dmajor in xiangqi and capablanca, xhand in
+  crazyhouse (33 runs over three rounds; 42 as three queues). An arm's
+  untouched variants count 0 in its mean of four. `queue.sh` takes an
+  arm as `name:v1,v2` for that.
+- If queue280 merges pawnmg as build 38, the arms play on it: dmajor,
+  tstab and xhand were built again on `plan33-pawnmg` (seeded bench equal
+  to pawnmg in standard; in crazyhouse only xhand differs).
+
 ### Where build 37's time goes
 
 - The `hotpath` build of build 37, seeded bench at depth 7 (the large
