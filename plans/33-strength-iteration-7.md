@@ -24,8 +24,10 @@ candidates near +10 or below; an A/A run (queue273) put one-round noise
 at up to 88 Elo between two copies. The clock now plans for 20 moves
 (15 where captures fill the hand): build 37, +36.9 ± 10.4 (queue277).
 A pawn that promotes to the dearest piece is cheaper in the opening:
-build 38, +27.1 ± 8.8 (queue280). Queue281 plays dmajor, tstab and
-xhand on build 38. At build 40, and at every tenth
+build 38, +27.1 ± 8.8 (queue280). An archbishop counts as a major for
+the danger cut: build 39, +15.2 ± 7.2 (queue281); tstab and xhand did
+not merge. Work is paused at build 39 (asked by the user, 2026-10-27).
+At build 40, and at every tenth
 build after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
 
@@ -2596,6 +2598,33 @@ round a (FSF's phase from its xiangqi values):
 - If queue280 merges pawnmg as build 38, the arms play on it: dmajor,
   tstab and xhand were built again on `plan33-pawnmg` (seeded bench equal
   to pawnmg in standard; in crazyhouse only xhand differs).
+
+### Queue281, dmajor, tstab and xhand on build 38; dmajor merged as build 39
+
+| Variant | main (a, b, c) | tstab | dmajor | xhand |
+|---------|----------------|-------|--------|-------|
+| standard | +117.2, +168.4, +117.2 | +166.2, +139.0, +181.7 | | |
+| xiangqi | +45.4, +36.6, +13.9 | +88.7, +66.8, +19.1 | +10.4, +59.6, +68.6 | |
+| crazyhouse | -81.4, -119.1, -121.1 | -121.1, -147.2, -92.5 | | -121.1, -179.5, -159.8 |
+| capablanca | -63.2, -100.0, -74.1 | -79.5, -56.1, -68.6 | -20.9, -33.1, -43.7 | |
+
+| Arm minus main | standard | xiangqi | crazyhouse | capablanca | mean of four |
+|----------------|---------:|--------:|-----------:|-----------:|-------------:|
+| tstab | +28.0 | +26.2 | -13.1 | +11.0 | +13.1 ± 10.2 (1.3σ) |
+| dmajor | 0 | +14.2 | 0 | +46.5 | +15.2 ± 7.2 (2.1σ) |
+| xhand | 0 | 0 | -46.3 | 0 | -11.6 (crazyhouse -2.2σ) |
+
+- No forfeits in 6600 games. dmajor passes (+2σ on the mean, capablanca
+  +2.3σ alone, no variant below -2σ): merged as build 39 (main
+  b18a34d). The archbishop's attacks were the danger the cut threw away.
+- tstab is under 2σ: not merged; the branch stays as the record of the
+  form. TI's precondition (a clock with a reserve) held, and the gain is
+  near +13, under what three rounds can show.
+- xhand loses in crazyhouse (-46.3, -2.2σ): the extra ply of a check
+  with a hand is worth more than the plies the tree gains (+1.1 on a
+  30 s clock). Not merged; the branch stays as the record.
+- Binaries of tstab and xhand deleted; `~/aneka-q/bin/main.exe` is build
+  39.
 
 ### Where build 37's time goes
 
