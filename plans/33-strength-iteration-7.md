@@ -2452,11 +2452,20 @@ round a (FSF's phase from its xiangqi values):
   `major_pieces` holds the queen, archbishop, chancellor, aiwok and
   amazon. So an attack led by an archbishop loses 53% of a full ring and
   most often falls under the threshold.
-- Not a lever: the archbishop's value. It is cheap against FSF (A over Q
-  0.75 and 0.66 against 0.87 and 0.82), but trades that our values rate
-  fair and FSF's rate 2.4 pawns or more bad come in 30 of 1200 build 37
-  games (our score 0.28 in them, 0.33 over all archbishop losses), near
-  1 to 2 Elo.
+- Not a lever through trades: the archbishop's value. It is cheap
+  against FSF (A over Q 0.75 and 0.66 against 0.87 and 0.82), but trades
+  that our values rate fair and FSF's rate 2.4 pawns or more bad come in
+  30 of 1200 build 37 games (our score 0.28 in them, 0.33 over all
+  archbishop losses), near 1 to 2 Elo.
+- It does part the static scores of unbalanced material. At one line end
+  (archbishop and bishop against chancellor, two knights and a pawn) ours
+  is -8.79 against FSF's -3.38, nearly all material. Over the knight, our
+  opening values follow FSF's middle game for B, R, C and Q (1.02, 1.69,
+  2.89, 3.24 against 1.06, 1.63, 2.94, 3.25), the archbishop not (2.44
+  against 2.82). In the endgame our pieces are dear against the pawn (R
+  8.4 pawns against 6.6, Q 15.9 against 12.9), and FSF's Winnable term
+  (no form of ours) takes 2.1 pawns off a queen against rook and bishop.
+  The value model stays the open root (A1): no candidate.
 - Noted, not acted on: nodes a second from the start position, ours over
   FSF's on this machine under load, standard 0.54, xiangqi 0.73,
   crazyhouse 0.61, capablanca 0.48 (plan 29, build 14, laptop: 0.84 in
