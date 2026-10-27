@@ -23,7 +23,9 @@ queue262 on, on the Windows machine. Queues 267 to 272 cut nine
 candidates near +10 or below; an A/A run (queue273) put one-round noise
 at up to 88 Elo between two copies. The clock now plans for 20 moves
 (15 where captures fill the hand): build 37, +36.9 ± 10.4 (queue277).
-At build 40, and at every tenth
+A pawn that promotes to the dearest piece is cheaper in the opening:
+build 38, +27.1 ± 8.8 (queue280). Queue281 plays dmajor, tstab and
+xhand on build 38. At build 40, and at every tenth
 build after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
 
@@ -2424,6 +2426,31 @@ round a (FSF's phase from its xiangqi values):
   normal priority for near two minutes of build 37's run, with half the
   processor free.
 
+### Queue280, pawnmg; merged as build 38
+
+| Round | Arm | standard | crazyhouse | capablanca |
+|-------|-----|---------:|-----------:|-----------:|
+| a | main | +88.7 | -115.2 | -143.1 |
+| a | pawnmg | +139.0 | -132.9 | -113.3 |
+| b | pawnmg | +143.1 | -159.8 | -94.3 |
+| b | main | +38.4 | -147.2 | -127.0 |
+| c | main | +72.2 | -147.2 | -94.3 |
+| c | pawnmg | +159.8 | -135.0 | -56.1 |
+
+| Variant | pawnmg - main | σ |
+|---------|--------------:|---:|
+| standard | +80.9 | 19.5 |
+| xiangqi | 0 (the same tree) | |
+| crazyhouse | -6.0 | 20.6 |
+| capablanca | +33.6 | 20.9 |
+| mean of four | +27.1 | 8.8 (3.1σ) |
+
+- No variant below -2σ, no forfeits in 1800 games. Merged as build 38
+  (main b3fa21c). The opening pawn's price was the cause in standard:
+  the largest one-variant gain of this plan.
+- dmajor, tstab and xhand are rebased on build 38; queue281 plays them
+  (see below), and their binaries are the rebuilt ones.
+
 ### Capablanca falls on build 37: search or evaluation
 
 - Falls (the rule of "Where the losses come from") in queue278 and
@@ -2492,7 +2519,7 @@ round a (FSF's phase from its xiangqi values):
 - Seeded bench, depth 8: standard 82548 and crazyhouse 333912 nodes, the
   same as build 37; xiangqi 254503 (258386), capablanca 376325 (391675).
   Smoke 1-3 in capablanca, no forfeits.
-- Queue281 (after queue280, on the build that queue280 leaves): main
+- Queue281 (on build 38): main
   and dmajor, xiangqi and capablanca, three rounds; standard and
   crazyhouse count 0 in the mean of four.
 
