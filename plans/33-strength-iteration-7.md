@@ -2627,6 +2627,46 @@ round a (FSF's phase from its xiangqi values):
 - Binaries of tstab and xhand deleted; `~/aneka-q/bin/main.exe` is build
   39.
 
+### The danger parts after dmajor
+
+- A diagnostic (`plan33-dparts`, deleted) logged our danger parts at two
+  capablanca line ends. With an archbishop leading: our sum 1.10 full
+  rings against FSF's 1.43; attackers 0.38 against 0.53, unsafe checks
+  0.45 against 0.54, ring hits 0.25 against 0.25, and FSF's mobility and
+  flank parts (0.06, 0.04) that we lack. The gap is spread over the
+  parts, with no one cause: no candidate. The queen-led end is near the
+  endgame, where FSF's middle-game danger counts little; its gap there is
+  not royal.
+
+### pieceg, the endgame value of a piece
+
+- Build 39's endgame values come from the moves at 12% occupancy, the
+  opening values at 36%, both shifted by the opening offset. The
+  sliders gain 23% to 24% in the endgame (standard R 621 to 773, Q 1186
+  to 1454), the knight 0%; FSF's pieces gain 6% to 11% (N 1.093, B
+  1.109, R 1.082, Q 1.057) and its pawn 65%, which build 38's pawn has.
+  Over the endgame pawn our R is 7.7 and Q 14.4 pawns, FSF's 6.6 and
+  12.9.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| the shift, values in proportion (plan 27) | proportion too steep, not played | | | |
+| A1 (a map of the totals) | closed without games | compounds stay low | | |
+| plan 28 (a learned value model) | not better on unseen variants | | data | |
+| A3 (opening occupancy from the setup) | -6.3, closed | | the endgame a third of it | the endgame part, not the occupancy |
+| pawnmg (build 38) | +27.1, merged | the opening pawn was dear | | the pieces' endgame part, the other half of the same table |
+
+- pieceg (`plan33-pieceg`, 0eba6fb, from build 39): a piece that is not
+  a pawn and not royal has an endgame value of `PIECE_ENDGAME_RATIO`
+  (108.5%, the mean of FSF's four) of its opening value. A value port,
+  as pawnmg. Standard endgame: N 416, B 412, R 674, Q 1287 (FSF over its
+  pawn 4.1, 4.4, 6.6, 12.9); capablanca R 727, Q 1394, A 1049, C 1246;
+  xiangqi chariot 901 to 764, cannon 472 to 406.
+- All 44 parameter files made again from an empty folder. A lone rook
+  ending: build 39 832 cp, pieceg 733. Smoke 4-0 in standard, no
+  forfeits. Queue282: build 39 and pieceg, all four variants, three
+  rounds.
+
 ### Where build 37's time goes
 
 - The `hotpath` build of build 37, seeded bench at depth 7 (the large
