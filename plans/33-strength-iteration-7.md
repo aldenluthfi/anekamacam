@@ -2666,6 +2666,11 @@ round a (FSF's phase from its xiangqi values):
   ending: build 39 832 cp, pieceg 733. Smoke 4-0 in standard, no
   forfeits. Queue282: build 39 and pieceg, all four variants, three
   rounds.
+- Queue282, pieceg minus build 39: standard -6.8, xiangqi -28.1,
+  crazyhouse +23.8, capablanca +4.6; mean -1.6 ± 10.3. No forfeits in
+  4800 games. Not merged; the branch stays as the record, its binary is
+  deleted. The endgame part of the table is not the lever the opening
+  pawn was: matching FSF's endgame ratios plays the same.
 
 ### Where build 37's time goes
 
