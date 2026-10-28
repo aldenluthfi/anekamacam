@@ -2723,6 +2723,20 @@ round a (FSF's phase from its xiangqi values):
   -15.9 (round a). Mean -11.7 ± 14.7; the six round differences left
   would need near +48 each. Cut, no forfeits; not merged, the branch
   stays as the record, its binary is deleted.
+- The cut came late: queue284 was hopeless (z 4.0 at half the runs)
+  before it was read. From queue285 on, `~/aneka-q/watch.sh` reads each
+  finished run with `tools/hopeless.py` (the mean the runs left must
+  reach for the merge rule, against the trend; past 2.5σ it is
+  hopeless) and wakes the session at once.
+
+### tstab again, on build 39
+
+- tstab on build 38 (queue281): +13.1 ± 10.2, positive in three of four;
+  an effect of that size cannot show in three rounds. Rule set before
+  the games, as for PCRH: tstab (rebased, 1c57655; fixed-depth nodes as
+  build 39's) plays three more rounds on build 39 (queue285) and merges
+  if the six rounds pooled give +2σ on the mean of four, near +14.4;
+  queue285 then needs near +15.7 alone. Smoke 3-0-1, no forfeits.
 
 ### Where build 37's time goes
 
