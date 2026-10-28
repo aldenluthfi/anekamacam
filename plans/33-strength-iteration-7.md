@@ -2718,6 +2718,11 @@ round a (FSF's phase from its xiangqi values):
   build 39 1072 and 1066 ms at depth 14.10 and 14.00, nmeval 1169 and
   1232 ms at 14.30 and 14.35. Smoke 4-0, no forfeits.
 - Queue284: build 39 and nmeval, all four variants, three rounds.
+- Queue284 (cut in round b): nmeval minus build 39, standard +12.3,
+  +36.0; xiangqi +7.0, +1.7; crazyhouse -90.3 (round a); capablanca
+  -15.9 (round a). Mean -11.7 ± 14.7; the six round differences left
+  would need near +48 each. Cut, no forfeits; not merged, the branch
+  stays as the record, its binary is deleted.
 
 ### Where build 37's time goes
 
