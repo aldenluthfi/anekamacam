@@ -2754,6 +2754,12 @@ round a (FSF's phase from its xiangqi values):
 - The build 40 sweep (`~/aneka-q/sweep.sh`): the 36 variants that both
   engines play, 400 games each, against FSF at `UCI_Elo` 2100, then at
   2000.
+- Chigorin at 2100: FSF forfeits 34 of 400 by illegal move. A local run
+  caught `d7d8q`: FSF 14.0.1 lets both sides promote to any piece, our
+  config keeps each side to its own army. This is the rule difference
+  plan 29's referee audit recorded (with sittuyin, ouk-chaktrang, janggi
+  and shatranj); those rows stay marked not valid, and the sweep watcher
+  skips their forfeits.
 
 ### Where build 37's time goes
 
