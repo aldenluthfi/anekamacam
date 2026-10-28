@@ -25,11 +25,12 @@ at up to 88 Elo between two copies. The clock now plans for 20 moves
 (15 where captures fill the hand): build 37, +36.9 ± 10.4 (queue277).
 A pawn that promotes to the dearest piece is cheaper in the opening:
 build 38, +27.1 ± 8.8 (queue280). An archbishop counts as a major for
-the danger cut: build 39, +15.2 ± 7.2 (queue281); tstab and xhand did
-not merge. The user asked (2026-10-27) to go on to build 40 and to play
-its sweep against FSF 2100 as well as 2000. At build 40, and at every
-tenth
-build after it, a sweep plays every variant that FSF plays against FSF
+the danger cut: build 39, +15.2 ± 7.2 (queue281). pieceg, xsee and
+nmeval did not merge. An unstable root may start a depth until half the
+time: build 40, +16.5 ± 7.2 over six pooled rounds (queues 281 and
+285). The user asked (2026-10-27) for build 40's sweep against FSF 2100
+as well as 2000; it runs now. At build 40, and at every tenth build
+after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
 
 ## Context
@@ -2737,6 +2738,22 @@ round a (FSF's phase from its xiangqi values):
   build 39's) plays three more rounds on build 39 (queue285) and merges
   if the six rounds pooled give +2σ on the mean of four, near +14.4;
   queue285 then needs near +15.7 alone. Smoke 3-0-1, no forfeits.
+
+| Variant | queue285 tstab - build 39 | six rounds pooled |
+|---------|--------------------------:|------------------:|
+| standard | +23.2 | +25.6 ± 15.1 |
+| xiangqi | +22.8 | +24.5 ± 14.2 |
+| crazyhouse | +19.9 | +3.4 ± 14.4 |
+| capablanca | +13.7 | +12.3 ± 13.9 |
+| mean of four | +19.9 ± 10.1 | +16.5 ± 7.2 (2.3σ) |
+
+- One forfeit in 4800 games: FSF lost one crazyhouse game on time
+  (round c, the tstab run); without it the pooled mean is near +16.4.
+  The pooled rule holds, no variant below -2σ: merged as build 40 (main
+  7b346e0).
+- The build 40 sweep (`~/aneka-q/sweep.sh`): the 36 variants that both
+  engines play, 400 games each, against FSF at `UCI_Elo` 2100, then at
+  2000.
 
 ### Where build 37's time goes
 
