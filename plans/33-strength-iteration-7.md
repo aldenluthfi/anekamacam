@@ -29,7 +29,8 @@ the danger cut: build 39, +15.2 ± 7.2 (queue281). pieceg, xsee and
 nmeval did not merge. An unstable root may start a depth until half the
 time: build 40, +16.5 ± 7.2 over six pooled rounds (queues 281 and
 285). The user asked (2026-10-27) for build 40's sweep against FSF 2100
-as well as 2000; it runs now. At build 40, and at every tenth build
+as well as 2000; the 2100 half is done, the 2000 half is paused after
+two variants (user, 2026-10-29). At build 40, and at every tenth build
 after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
 
@@ -2760,6 +2761,38 @@ round a (FSF's phase from its xiangqi values):
   plan 29's referee audit recorded (with sittuyin, ouk-chaktrang, janggi
   and shatranj); those rows stay marked not valid, and the sweep watcher
   skips their forfeits.
+
+### Build 40 against FSF 2100, all variants (400 games each)
+
+| Variant | Elo | Variant | Elo |
+|---------|----:|---------|----:|
+| asean | +278.5 | modern | +48.1 |
+| amazon | +209.9 | hoppelpoppel | +25.2 |
+| los-alamos | +181.7 | judkins | +11.3 |
+| makruk | +170.6 | janus | +4.3 |
+| ai-wok | +156.6 | embassy | +1.7 |
+| standard | +153.4 | newzealand | -6.9 |
+| pocketknight | +149.3 | extinction | -20.0 |
+| almost | +143.1 | gothic | -21.7 |
+| minishogi | +124.0 | capablanca | -31.4 |
+| minixiangqi | +113.3 | euroshogi | -34.9 |
+| kinglet | +100.9 | horde | -52.5 |
+| shatranj | +356.6 | shogi | -52.5 |
+| chancellor | +58.7 | fivecheck | -75.0 |
+| knightmate | +58.7 | grand | -82.3 |
+| xiangqi | +49.0 | koth | -118.1 |
+| | | threecheck | -123.0 |
+| | | crazyhouse | -143.1 |
+
+- σ near 15 to 18 (± near 30 to 36 at 95%); horde ±21.8.
+- Not valid (FSF forfeits from the known rule differences): chigorin
+  +132.9 (34), janggi (all 400), ouk-chaktrang +177.2 (40 illegal, 1
+  time), sittuyin +197.9 (215). Shatranj counts 145 FSF forfeits, each
+  after a bared king (plan 29): it stands.
+- 20 of 32 valid variants at or above 2100, 12 below. The weakest:
+  crazyhouse, threecheck, koth, grand, fivecheck.
+- Against FSF 2000 so far: ai-wok +306.5, almost +433.3. The rest waits;
+  `~/aneka-q/sweep.sh b40-2000 2000` resumes at amazon.
 
 ### Where build 37's time goes
 
