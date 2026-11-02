@@ -2827,6 +2827,31 @@ round a (FSF's phase from its xiangqi values):
   (it never left); the branch stays as the record, its binary is
   deleted.
 
+### The weak variants on build 40 (queue287, one round each)
+
+- Build 40 against FSF 2100, 200 games: threecheck -111.4, fivecheck
+  -115.2, koth -94.3, grand -143.1; no forfeits. Lost games with a fall
+  from 0 or more: 92 of 130, 90 of 129, 61 of 126, 100 of 134. Lost
+  games where our score had been +300 or more: 45, 60, 33, 62.
+- Our score against the result at our moves (ply 16 on): in standard a
+  score of 0 to +100 scores 0.53 and +100 to +200 0.80; in the weak
+  variants 0 to +100 scores 0.16 (threecheck) to 0.27 (koth), +200 to
+  +300 0.30 (crazyhouse) to 0.67 (koth). Our scores there are 200 to
+  300 cp too high against the same opponent.
+- Falls against FSF (the probe of capablanca): in threecheck FSF's score
+  at 1 s agrees with ours in 10 of 11, in koth in 7 of 10; the falls
+  are not mostly a static gap there.
+- The check race: replayed through FSF for the counts, our score and
+  result by checks left. In threecheck the gap is at 3+3, before any
+  check (mean +56, result 0.34); in fivecheck at two left against four
+  our race worth and FSF's are near equal (+4.5 and +3.2 pawns) and the
+  result is 0.17. The race term is not the cause; LA (plan 29) found the
+  royal safety, and that still fits. FSF's 1/r² shape is not a
+  candidate.
+- The match record writes check counters as at the start (`3+3`): the
+  FEN writer leaves them out. The engines get the start position and the
+  moves, so play is not affected.
+
 ### Where build 37's time goes
 
 - The `hotpath` build of build 37, seeded bench at depth 7 (the large
