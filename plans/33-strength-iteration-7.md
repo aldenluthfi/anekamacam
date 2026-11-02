@@ -2794,6 +2794,29 @@ round a (FSF's phase from its xiangqi values):
 - Against FSF 2000 so far: ai-wok +306.5, almost +433.3. The rest waits;
   `~/aneka-q/sweep.sh b40-2000 2000` resumes at amazon.
 
+### The weakest variants from here (user, 2026-11-02)
+
+- The baseline is FSF at `UCI_Elo` 2100, as most variants pass it. The
+  iteration now works on the weakest variants of the sweep, so the gap
+  between variants shrinks: crazyhouse (-143), threecheck (-123), koth
+  (-118), grand (-82), fivecheck (-75).
+- First the user's experiment: standard with FSF's piece values and
+  piece-square tables, against FSF, to show what the derivation of those
+  two costs or gains and to point at the other parts. Full derivation
+  stays on main and returns when it is done.
+
+### fsfpst, FSF's values and tables in standard (diagnostic)
+
+- `plan33-fsfpst` (05dccc6, from build 40) changes only
+  `res/param/standard/latest.param`: FSF's chess values and its `Bonus`,
+  `KingBonus` and `PBonus` tables (`psqt.cpp`), scaled by 100 over 208
+  (FSF's pawn of the endgame); our royal value and the 11 scalars stay.
+  Values: P 61 / 100, N 375 / 411, B 397 / 440, R 613 / 663, Q 1220 /
+  1289 (build 40: N 383 / 383, B 380 / 442, R 621 / 773, Q 1186 /
+  1454). The other terms derive again from these values at load.
+- Smoke 3-1, no forfeits. Queue286: build 40 and fsfpst, standard, three
+  rounds. It is a diagnostic and never merges.
+
 ### Where build 37's time goes
 
 - The `hotpath` build of build 37, seeded bench at depth 7 (the large
