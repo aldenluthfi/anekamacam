@@ -2816,6 +2816,16 @@ round a (FSF's phase from its xiangqi values):
   1454). The other terms derive again from these values at load.
 - Smoke 3-1, no forfeits. Queue286: build 40 and fsfpst, standard, three
   rounds. It is a diagnostic and never merges.
+- Queue286: build 40 +147.2, +141.0, +125.0; fsfpst +75.9, +129.0,
+  +86.9. fsfpst minus build 40: -40.5 ± 20.3 (-2.0σ). No forfeits.
+- FSF's own values and tables play worse in our engine than the derived
+  ones. FSF tuned its tables together with its other terms (mobility,
+  threats, king safety, imbalance); in our evaluation they meet our
+  terms, which do not share their tuning. So in standard the derivation
+  of values and tables is not what holds us back from FSF; the other
+  parts are where the difference lies. Full derivation stays on main
+  (it never left); the branch stays as the record, its binary is
+  deleted.
 
 ### Where build 37's time goes
 
