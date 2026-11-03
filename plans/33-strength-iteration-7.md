@@ -2897,6 +2897,30 @@ round a (FSF's phase from its xiangqi values):
 - Queue288: build 40 and uq in threecheck, fivecheck, koth, crazyhouse,
   grand, with standard and xiangqi as guards, three rounds. Rule set
   before the games: +2σ on the mean of the seven, none below -2σ.
+- A diagnostic build ran at normal priority beside queue288's first run
+  (round a, threecheck, build 40) for near ten minutes; if threecheck
+  decides the result, that run plays again.
+
+### Why chain: grand's pawns
+
+- D for grand is the pawn group (-0.60 against standard's -0.09). E,
+  tested (a diagnostic, `plan33-pparts`, deleted, logging each part of
+  `pawn_structure!`), the same 60 positions, from our side, opening
+  against FSF's middle game and endgame against its endgame: our
+  connected part +0.53 and +0.92 pawns, FSF's whole Pawns row +0.19 and
+  +0.02 (Passed +0.02, +0.04); the other parts are small. Standard:
+  connected +0.16 and +0.47 against Pawns +0.14 and +0.10.
+- Cause: our connected bonus is flat, 20% and 35% of the pawn value at
+  any rank; FSF's grows with the rank and is small for a pawn that has
+  not moved. Grand's pawns start side by side on its third rank of ten,
+  so our unmoved chains are priced as advanced ones.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| pstr, pstr2 (FSF's form, queues 264, 265) | standard +4.0 ± 25.2, crazyhouse -17.4, capablanca +13.6; cut | not known | the four test variants on build 36; grand never played | grand, where the connected part is the gap, on build 40 |
+
+- pstr3 (`plan33-pstr3`, from build 40): the three pstr2 commits again,
+  cleanly. It plays after queue288 in grand and the other weak variants.
 
 ### Where build 37's time goes
 
