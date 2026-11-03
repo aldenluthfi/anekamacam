@@ -1065,7 +1065,7 @@ macro_rules! pawn_structure {
 /// A ring attacker is an enemy piece whose map meets the ring. A safe check
 /// square is one we do not attack, or a weak one the enemy holds twice. A
 /// type with no safe check square makes each check square it reaches
-/// unsafe.
+/// unsafe, but for the dearest type, whose check there would lose it.
 ///
 /// A sum past the threshold costs the colour its square in the opening,
 /// linear past the cap, and the sum itself in the endgame; the weights
@@ -1408,10 +1408,13 @@ macro_rules! attack_terms {
                                 | (weak & maps[region(twice, them) + word])
                                 | (always_safe as u64).wrapping_neg();
                             let slot = region(unsafe_checks, color) + word;
+                            let given = (safe == 0                              /* the dearest type gives no check    */
+                                && eval.danger_unsafe_types[piece_index])       /* that loses it                      */
+                                as u64;
 
                             match pass {
                                 false => safe += (hits & shielded).count_ones(),
-                                true => maps[slot] |= hits * (safe == 0) as u64,
+                                true => maps[slot] |= hits * given,
                             }
                         }
                     }

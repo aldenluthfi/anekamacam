@@ -465,7 +465,8 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 ///
 /// A weak ring square is one the enemy attacks and we do not hold twice. A
 /// ring hit lands on a ring square next to the royal. An unsafe check is a
-/// check square an enemy type reaches when none of its squares is safe. A
+/// check square an enemy type reaches when none of its squares is safe; a
+/// check there gives the checker away, so the dearest type gives none. A
 /// safe check counts once for each enemy type. A major of the cut is a big
 /// piece worth more than the geometric mean of the cheapest and the dearest
 /// big pieces.
@@ -657,6 +658,7 @@ pub struct EvalParams {
     pub danger_check: [i32; 2],                                                 /* of a type with 1, more safe checks */
     pub danger_no_major: i32,                                                   /* cut when the enemy has no major    */
     pub danger_majors: Vec<bool>,                                               /* piece index to a major of the cut  */
+    pub danger_unsafe_types: Vec<bool>,                                         /* piece index to unsafe checks given */
     pub danger_base: i32,                                                       /* added to each sum                  */
     pub danger_threshold: i32,                                                  /* sum that costs nothing             */
     pub danger_cap: i32,                                                        /* opening cost is linear past it     */
@@ -3682,6 +3684,9 @@ pub fn derive_advantage_parameters(state: &mut State) {
             p_is_big!(piece) && value * value > cheapest_big * dearest_big
         })
         .collect();
+    let danger_unsafe_types = state.statics.pieces.iter()
+        .map(|piece| (p_ovalue!(piece) as u64) < dearest)
+        .collect();
     let danger_cost = DANGER_COST_RATIO.map(|part| {
         (dearest * part as u64 / scale) as i32 * mated as i32
     });
@@ -3749,6 +3754,7 @@ pub fn derive_advantage_parameters(state: &mut State) {
     statics.eval.danger_check = DANGER_CHECK.map(|part| part as i32);
     statics.eval.danger_no_major = danger_no_major as i32;
     statics.eval.danger_majors = danger_majors;
+    statics.eval.danger_unsafe_types = danger_unsafe_types;
     statics.eval.danger_base = DANGER_BASE as i32;
     statics.eval.danger_threshold = DANGER_THRESHOLD as i32;
     statics.eval.danger_cap = DANGER_CAP as i32;
