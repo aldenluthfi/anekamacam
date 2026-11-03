@@ -2932,6 +2932,16 @@ round a (FSF's phase from its xiangqi values):
   xiangqi tree is build 40's). Rules set before the games: each arm
   merges at +2σ on the mean of its played variants, none below -2σ.
   Smokes: uq2 1-3 in threecheck, pstr3 1-3 in grand, no forfeits.
+- pstr3 cut after round a (`watch.sh`: the twelve pairs left needed
+  +32.9 each against a trend of -14.7): minus build 40, standard +49.5,
+  fivecheck +5.5, grand 0.0, crazyhouse -12.2, koth -37.2, threecheck
+  -93.6. Grand, where the connected part was the gap, shows nothing; FSF's
+  structure form plays level again, as pstr2 did. The flat connected
+  part is a static fault that does not cost games. Not merged; its
+  binary is deleted, `plan33-pstr3` stays as the record.
+- The watcher's first notice came after one pair (z 3.1 from a single
+  run); `hopeless.py` now waits for one full round of an arm's variants.
+- Queue289 goes on with main and uq2 in threecheck and fivecheck.
 
 ### Why chain: grand's pawns
 
