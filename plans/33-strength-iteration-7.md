@@ -2901,6 +2901,38 @@ round a (FSF's phase from its xiangqi values):
   (round a, threecheck, build 40) for near ten minutes; if threecheck
   decides the result, that run plays again.
 
+### Queue288, uq (cut with one pair left)
+
+| Variant | uq - build 40, by round | mean | σ |
+|---------|------------------------|-----:|---|
+| fivecheck | +106.9, +97.5, +111.6 | +105.3 | 20.4 (5.2σ) |
+| koth | +18.1, +20.6, +37.3 | +25.3 | 20.5 |
+| threecheck | +7.5, -31.8, +32.2 | +2.6 | 20.2 |
+| standard | -6.2, +14.1, -15.0 | -2.4 | 20.3 |
+| xiangqi | -23.7, -10.8 | -17.3 | 24.6 |
+| grand | -82.7, +8.9, +7.7 | -22.0 | 19.9 |
+| crazyhouse | -19.0, -24.0, -47.6 | -30.2 | 21.2 |
+
+- Mean of the seven +8.8 ± 8.0; the last pair (xiangqi round c) would
+  have needed +122. Cut, no forfeits; not merged. The run of round a in
+  threecheck that shared the processor with a build counts: threecheck
+  does not decide it.
+- Climbing back: the cause was largest where the race doubles each
+  unsafe check, and fivecheck shows it at 5.2σ; without a race the cut
+  is level or a loss (crazyhouse, grand, xiangqi's chariot).
+- uq2 (`plan33-uq2`, f3003ba, from build 40): the dearest type gives no
+  unsafe check only in a race of checks. Seeded bench equal to build 40
+  in standard, xiangqi and crazyhouse. The subset was chosen after
+  queue288, so it plays again before any merge.
+
+### Queue289, uq2 and pstr3 in one session
+
+- Each round: main in threecheck, fivecheck, grand, koth, crazyhouse and
+  standard; uq2 in threecheck and fivecheck; pstr3 in the six (its
+  xiangqi tree is build 40's). Rules set before the games: each arm
+  merges at +2σ on the mean of its played variants, none below -2σ.
+  Smokes: uq2 1-3 in threecheck, pstr3 1-3 in grand, no forfeits.
+
 ### Why chain: grand's pawns
 
 - D for grand is the pawn group (-0.60 against standard's -0.09). E,
