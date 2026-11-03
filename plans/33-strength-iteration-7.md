@@ -2943,6 +2943,23 @@ round a (FSF's phase from its xiangqi values):
   run); `hopeless.py` now waits for one full round of an arm's variants.
 - Queue289 goes on with main and uq2 in threecheck and fivecheck.
 
+### Grand's chain, built again from the falls
+
+- The fall probe on 30 grand falls (queue287, build 40): in 11 FSF's
+  1 s score is 250 cp or more under our 4 s score. Along FSF's lines, 5
+  are search (our score drops within one to five plies) and 5 to 6 stay
+  200 to 600 cp above FSF for all ten plies.
+- At the ends of those lines, FSF minus ours from our side: material
+  -0.86, pawns -0.70 (the connected part, shown level in play by pstr3),
+  king -0.40, threats -0.24. The material balance with both value sets:
+  where we hold rooks or a queen against minors and pawns our endgame
+  values swell it (+6.11 and +10.41 against FSF's +4.05 and +6.32): our
+  grand rook is 9.2 endgame pawns and the queen 17.7, FSF's 6.6 and
+  12.9. The mean is small (-0.35 in the opening), the spread is not.
+- pieceg (the endgame part 108.5% of the opening value) never played
+  grand (queue282: standard -6.8, xiangqi -28.1, crazyhouse +23.8,
+  capablanca +4.6). Grand is the difference; it is the next grand arm.
+
 ### Why chain: grand's pawns
 
 - D for grand is the pawn group (-0.60 against standard's -0.09). E,
