@@ -2852,6 +2852,52 @@ round a (FSF's phase from its xiangqi values):
   FEN writer leaves them out. The engines get the start position and the
   moves, so play is not affected.
 
+### Why chain: the weak variants on build 40
+
+- A: threecheck, fivecheck, koth and grand stand 94 to 143 under FSF
+  2100 (queue287). B: most losses fall from a score of 0 or more. C: our
+  score there is 200 to 300 cp too high (the calibration above).
+- D, tested: a diagnostic (`plan33-eparts`, deleted) logged our parts
+  at 60 positions a variant (our move, lost games, ply 16 on, our score
+  0 to +300) beside FSF's trace rows, with our phase weight on both.
+  FSF minus ours, in pawns from our side:
+
+| Variant | king | material | pawns | variant row | total |
+|---------|-----:|---------:|------:|------------:|------:|
+| standard | -0.57 | -0.03 | -0.09 | 0.00 | -0.68 |
+| crazyhouse | -3.56 | -0.89 | -0.01 | 0.00 | -4.99 |
+| fivecheck | -2.32 | -0.40 | -0.12 | -0.72 | -3.74 |
+| threecheck | -0.98 | -0.60 | -0.06 | -0.12 | -1.96 |
+| grand | -0.63 | -0.47 | -0.60 | 0.00 | -2.01 |
+| koth | -0.66 | -0.09 | -0.17 | -0.30 | -1.54 |
+
+- In the check variants the danger sum points the wrong way: FSF's
+  K_DANGER from our side -1.22 (fivecheck), -0.50 (threecheck); our
+  danger sum +0.77 and +0.31. Per royal (full rings, FSF / ours), the
+  enemy royal: sum 0.32 / 0.53 (fivecheck), 0.14 / 0.29 (threecheck);
+  its unsafe checks 0.04 / 0.16 and 0.04 / 0.09, the largest excess.
+- E, tested: the unsafe check squares on the enemy royal by attacker
+  type: the dearest type gives 80% of ours in fivecheck, 69% in
+  threecheck, 48% in standard. FSF counts no unsafe check of its queen
+  (rook, bishop, knight and fairy types only). Without the dearest type
+  ours would be near 0.04, 0.03 and 0.04, FSF's 0.04, 0.04 and 0.05. The
+  race doubles each unsafe check, so the check variants feel it most.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| KD (plan 29) | merged; unsafe checks from each type | | | the dearest type left out |
+| the danger fits (plan 33) | unsafe 0.5 / 0.6, corr 0.62 (standard) | the size, not the type | | the type, measured in the check variants |
+
+- uq (`plan33-uq`, 2bdb103, from build 40): the dearest type gives no
+  unsafe check, as a check from a square the defender attacks would lose
+  it (`danger_unsafe_types`, derived at load). Seeded bench: standard
+  the same (bare endings), xiangqi 143267 (146946; the chariot, which
+  FSF counts), capablanca 215269 (225368), crazyhouse 363682 (442555).
+  Smoke 3-1 in fivecheck, no forfeits.
+- Queue288: build 40 and uq in threecheck, fivecheck, koth, crazyhouse,
+  grand, with standard and xiangqi as guards, three rounds. Rule set
+  before the games: +2σ on the mean of the seven, none below -2σ.
+
 ### Where build 37's time goes
 
 - The `hotpath` build of build 37, seeded bench at depth 7 (the large
