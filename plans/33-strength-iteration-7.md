@@ -2921,6 +2921,18 @@ round a (FSF's phase from its xiangqi values):
 
 - pstr3 (`plan33-pstr3`, from build 40): the three pstr2 commits again,
   cleanly. It plays after queue288 in grand and the other weak variants.
+  Seeded bench in xiangqi equal to build 40 (soldiers keep the flat
+  structure); start scores equal in grand, standard and xiangqi; smoke
+  1-3 in grand, no forfeits.
+
+### Koth, no static cause
+
+- Koth's static excess over standard is near 0.9 pawns, spread: the
+  variant row -0.30, space -0.16, the king -0.09 over standard, the rest
+  small. The goal race is already FSF's flag race (`GOAL_RATIO`, 1540,
+  FSF's 4000 over its queen of 2538; the same holds and `w / (w + d²)`).
+  At its falls FSF's search agrees with ours in 7 of 10. So koth's D is
+  not the evaluation; the search is the next test there.
 
 ### Where build 37's time goes
 
