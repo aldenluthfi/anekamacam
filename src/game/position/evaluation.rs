@@ -1065,7 +1065,8 @@ macro_rules! pawn_structure {
 /// A ring attacker is an enemy piece whose map meets the ring. A safe check
 /// square is one we do not attack, or a weak one the enemy holds twice. A
 /// type with no safe check square makes each check square it reaches
-/// unsafe, but for the dearest type, whose check there would lose it.
+/// unsafe, but in a race of checks the dearest type, whose check there
+/// would lose it, makes none.
 ///
 /// A sum past the threshold costs the colour its square in the opening,
 /// linear past the cap, and the sum itself in the endgame; the weights

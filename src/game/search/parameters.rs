@@ -465,9 +465,10 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 ///
 /// A weak ring square is one the enemy attacks and we do not hold twice. A
 /// ring hit lands on a ring square next to the royal. An unsafe check is a
-/// check square an enemy type reaches when none of its squares is safe; a
-/// check there gives the checker away, so the dearest type gives none. A
-/// safe check counts once for each enemy type. A major of the cut is a big
+/// check square an enemy type reaches when none of its squares is safe; in
+/// a race of checks, where each counts twice, the dearest type gives none,
+/// as a check there gives the checker away. A safe check counts once for
+/// each enemy type. A major of the cut is a big
 /// piece worth more than the geometric mean of the cheapest and the dearest
 /// big pieces.
 ///
@@ -3685,7 +3686,7 @@ pub fn derive_advantage_parameters(state: &mut State) {
         })
         .collect();
     let danger_unsafe_types = state.statics.pieces.iter()
-        .map(|piece| (p_ovalue!(piece) as u64) < dearest)
+        .map(|piece| (p_ovalue!(piece) as u64) < dearest || racing == 0)
         .collect();
     let danger_cost = DANGER_COST_RATIO.map(|part| {
         (dearest * part as u64 / scale) as i32 * mated as i32
