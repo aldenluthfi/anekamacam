@@ -30,7 +30,10 @@ nmeval did not merge. An unstable root may start a depth until half the
 time: build 40, +16.5 ± 7.2 over six pooled rounds (queues 281 and
 285). The user asked (2026-10-27) for build 40's sweep against FSF 2100
 as well as 2000; the 2100 half is done, the 2000 half is paused after
-two variants (user, 2026-10-29). At build 40, and at every tenth build
+two variants (user, 2026-10-29). From 2026-11-02 the work is on the
+weakest variants against FSF 2100. In a race of checks the dearest type
+gives no unsafe check: build 41, fivecheck +82.2 (queue289). At build
+40, and at every tenth build
 after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
 
@@ -2942,6 +2945,16 @@ round a (FSF's phase from its xiangqi values):
 - The watcher's first notice came after one pair (z 3.1 from a single
   run); `hopeless.py` now waits for one full round of an arm's variants.
 - Queue289 goes on with main and uq2 in threecheck and fivecheck.
+- Queue289, uq2 minus build 40: fivecheck +69.5, +75.5, +101.6 (+82.2);
+  threecheck -26.1, +1.9, +7.8 (-5.5). Mean of the two +38.4 ± 14.1
+  (2.7σ), none below -2σ, no forfeits: merged as build 41 (main
+  dcafd99, the uq and uq2 commits). Fivecheck repeats queue288's +105;
+  the cause found at the bottom of the chain pays where the chain said.
+- Queue290: build 41 and pieceg (rebased, bd65795) in grand, crazyhouse,
+  threecheck, fivecheck, koth, with standard and xiangqi as guards
+  (xiangqi was pieceg's worst, -28.1), three rounds. Rule set before the
+  games: +2σ on the mean of the seven, none below -2σ. Smoke 1-2-1 in
+  grand, no forfeits.
 
 ### Grand's chain, built again from the falls
 
