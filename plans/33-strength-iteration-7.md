@@ -3119,6 +3119,8 @@ round a (FSF's phase from its xiangqi values):
   depth 8.8 at 1 s (8.0), 12.1 at 4 s (11.5); the mean distance to
   FSF's 0.25 s score 243 and 163 cp (246, 168). Other variants have no
   goal rule (standard bench equal). Smoke 0-2-2 in koth, no forfeits.
+  The ten positions at depth 9 (geometric mean): goalz 23653 nodes,
+  build 43 33569, the same positions as standard 21800.
   Queue292: build 43 and goalz in koth, three rounds, after queue291.
   Rule set before the games: +2σ in koth.
 - The goalz build ran at normal priority for ten minutes beside
