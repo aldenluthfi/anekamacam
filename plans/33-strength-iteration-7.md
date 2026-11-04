@@ -36,7 +36,9 @@ gives no unsafe check: build 41, fivecheck +82.2 (queue289). Builds
 42 to 44 are speed with the same nodes: the attack maps in fixed
 arrays, the word count passed to the attack casts, and the goal race
 flooded with maps (koth x0.85). seefsf, goalz and the typed or race
-forms of the danger did not merge or stay closed. At build
+forms of the danger did not merge or stay closed. A pawn of a pawn
+mass counts its defenders and neighbours: build 45, horde +30.4
+(queue294). At build
 40, and at every tenth build
 after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
@@ -3251,6 +3253,10 @@ round a (FSF's phase from its xiangqi values):
   Smoke 2-2 in horde, no forfeits.
 - Queue294: build 44 and hmass in horde, three rounds. Rule set before
   the games: +2σ in horde.
+- Queue294, hmass minus build 44 in horde: +14.1, +16.0, +61.1 (+30.4,
+  σ near 12.7, 2.4σ). No forfeits. Merged as build 45. The count of
+  defenders and neighbours, FSF's form, carries where PM's one part did
+  not; the root of plan 29's horde chain (the pawn mass form) pays.
 
 ### Grand's chain, built again from the falls
 
