@@ -3199,6 +3199,45 @@ round a (FSF's phase from its xiangqi values):
 - Queue293: build 44 in shogi, horde and koth, one round, for the falls
   of the first two and build 44's koth in play. Smoke 4-0 in koth, no
   forfeits.
+- Queue293: shogi -6.9 ± 48.5 (build 40 -52.5; builds 42 to 44 made it
+  near 15% faster), horde -63.2 ± 28.4, koth -94.3 ± 49.9 (the hmass
+  build shared the machine at normal priority during part of it).
+
+### Why chain: horde
+
+- A: horde -63.2. B: by colour, as the horde (White) 77-2-21, with the
+  pieces 4-0-96. 70 of the 117 losses never fall from 0 or more.
+- The tips of 20 losses with the pieces (our first move where FSF at
+  0.5 s sees -300 or worse): in 10 at ply 9, our first move after the
+  opening, FSF already at -15 to -23 pawns. The opening judge (engine A,
+  depth 8, level within 50 cp) never finds a level opening: our start
+  score is -1865 (FSF classical -154), so after 64 tries the last random
+  one plays. Pairs swap colours, so the lopsided openings cancel; horde
+  is then a test of who converts the horde side: FSF 96 of 100, we 77.
+- The start score fell from -527 (PM, build 31) as build 38 made the
+  opening pawn cheaper (36 pawns x 39 cp). FSF's own material is -22.25
+  there too; it adds space +13.99 (off: +20 for FSF in its lab) and
+  imbalance +6.82. Neither changes the ratio of pawns to pieces, so the
+  scale is not the cause.
+- D: plan 29's lab put FSF's horde weight on its pawn mass form (180 of
+  its 230 pawn value). FSF: each pawn of a mass scores its count of
+  supporters and phalanx neighbours times a rank table (opposed near
+  40% on the last three ranks). Ours (PM): one progress part for a
+  defended pawn; no count, no phalanx, no opposed rule.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| PM (plan 29) | horde +8.1, merged | | progress part only for a defended pawn | count of supporters and phalanx, opposed 40% |
+| PR, PR2 (plan 29) | horde +31, other variants lost | progress counted twice outside a mass | every variant | only a pawn mass (horde alone) |
+
+- hmass (`plan33-hmass`, from build 44): the progress part of a mass
+  pawn that is not passed, once for each own pawn that defends it or
+  stands beside it, 40.4% when an enemy pawn is on its path. Only horde
+  has a mass: standard, xiangqi and crazyhouse benches equal; horde
+  start -1727 (-1865), seeded search at depth 9 18508 nodes (50092).
+  Smoke 2-2 in horde, no forfeits.
+- Queue294: build 44 and hmass in horde, three rounds. Rule set before
+  the games: +2σ in horde.
 
 ### Grand's chain, built again from the falls
 

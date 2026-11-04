@@ -510,19 +510,24 @@ const PAWN_MIN_START_COUNT: usize = 5;
 /// - `PAWN_CONNECTED_OPENING_RATIO` : +20% of the opening pawn value
 /// - `PAWN_CONNECTED_ENDGAME_RATIO` : +35% of the endgame pawn value
 /// - `PAWN_MASS_ADVANCE_RATIO`      : +125% and +80%, times the progress
+/// - `PAWN_MASS_OPPOSED_RATIO`      : 40.4% of it with an enemy pawn ahead
 /// - `PAWN_DOUBLED_RATIO`           : -25%, the same in the two phases
 /// - `PAWN_ISOLATED_RATIO`          : -25%, the same in the two phases
 /// - `PAWN_BACKWARD_RATIO`          : -17.5%, the same in the two phases
 ///
 /// A colour with more pawns than `1 / PAWN_MASS_DIVISOR` of the board has
-/// a pawn mass: it wins by pushing its defended pawns, so each one that is
+/// a pawn mass: it wins by pushing its pawns together, so each one that is
 /// not passed gains the progress part, from the same squared progress as
-/// the passed pawn. One step from promotion on eight ranks, it is about
-/// one pawn more.
+/// the passed pawn, once for each own pawn that defends it or stands
+/// beside it, as Fairy-Stockfish's `HordeConnected` counts them. One step
+/// from promotion on eight ranks, it is about one pawn more for each. An
+/// opposed pawn gets 40.4%, Fairy-Stockfish's opposed row over its
+/// unopposed one on the last three ranks (95 over 235).
 ///
 const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
 const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
 const PAWN_MASS_ADVANCE_RATIO: [u32; 2] = [1250, 800];
+const PAWN_MASS_OPPOSED_RATIO: u32 = 404;
 const PAWN_MASS_DIVISOR: usize = 4;
 const PAWN_DOUBLED_RATIO: u32 = 250;
 const PAWN_ISOLATED_RATIO: u32 = 250;
@@ -638,6 +643,7 @@ pub struct EvalParams {
     pub pawn_mass_opening: Vec<i32>,                                            /* slot, square to progress worth in  */
     pub pawn_mass_endgame: Vec<i32>,                                            /* a mass, opening then ending        */
     pub pawn_mass: usize,                                                       /* pawns of a colour that make a mass */
+    pub pawn_mass_opposed: i32,                                                 /* part an opposed mass pawn keeps    */
     pub pawn_doubled_penalty: Vec<i32>,                                         /* slot to cost of blocking itself    */
     pub pawn_isolated_penalty: Vec<i32>,                                        /* slot to cost of standing alone     */
     pub pawn_backward_penalty: Vec<i32>,                                        /* slot to cost of a contested stop   */
@@ -3597,6 +3603,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     statics.eval.pawn_mass_opening = mass_opening;
     statics.eval.pawn_mass_endgame = mass_endgame;
     statics.eval.pawn_mass = board_size / PAWN_MASS_DIVISOR;
+    statics.eval.pawn_mass_opposed = PAWN_MASS_OPPOSED_RATIO as i32;
     statics.eval.pawn_doubled_penalty = doubled;
     statics.eval.pawn_isolated_penalty = isolated;
     statics.eval.pawn_backward_penalty = backward_penalty;

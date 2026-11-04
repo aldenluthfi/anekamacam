@@ -784,7 +784,8 @@ macro_rules! castling_bonus {
 /// - protected passed : a passed pawn with a pawn defender, 1.5 times
 /// - connected passed : a passed pawn with a passed defender, 2 times
 /// - connected        : another own pawn defends it
-/// - pushed           : connected and not passed, in a pawn mass
+/// - pushed           : not passed, in a pawn mass, for each own pawn that
+///   defends it or stands beside it; 40.4% with an enemy pawn on its path
 /// - doubled          : an own pawn is on its path
 /// - isolated         : no own pawn on a file that can defend it
 /// - backward         : a neighbour but no defender, stop square attacked
@@ -986,14 +987,36 @@ macro_rules! pawn_structure {
                                     * passed as i32;
                             let bonus =
                                 2 + connected as i32 + chained as i32;
-                            let pushed = (mass && connected && !passed) as i32;
+                            let pushed = match mass && !passed {
+                                true => {
+                                    let partners = pawns[color].iter()
+                                        .filter(|other| other.1 != square
+                                            && (get!(support, other.1 as u32)
+                                                || other.1 as i32 / files
+                                                    == square as i32 / files
+                                                    && neighbours.contains(
+                                                        &(other.2 - file)
+                                                    )))
+                                        .count() as i32;
+                                    let opposed = pawns[color ^ 1].iter()
+                                        .any(|other|
+                                            get!(path, other.1 as u32)
+                                        );
+
+                                    partners * match opposed {
+                                        true => statics.eval.pawn_mass_opposed,
+                                        false => COEFFICIENT_SCALE as i32,
+                                    }
+                                }
+                                false => 0,
+                            };
 
                             opening += sign * (
                                 passer_opening * bonus / 2
                                     + statics.eval.pawn_connected_opening[slot]
                                         * connected as i32
                                     + statics.eval.pawn_mass_opening[index]
-                                        * pushed
+                                        * pushed / COEFFICIENT_SCALE as i32
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
                                     - statics.eval.pawn_isolated_penalty[slot]
@@ -1006,7 +1029,7 @@ macro_rules! pawn_structure {
                                     + statics.eval.pawn_connected_endgame[slot]
                                         * connected as i32
                                     + statics.eval.pawn_mass_endgame[index]
-                                        * pushed
+                                        * pushed / COEFFICIENT_SCALE as i32
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
                                     - statics.eval.pawn_isolated_penalty[slot]
