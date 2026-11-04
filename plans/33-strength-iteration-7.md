@@ -3190,6 +3190,19 @@ round a (FSF's phase from its xiangqi values):
   tqueen, queue267); the race rise only makes it larger. Threecheck's
   chain stops there too.
 
+### Crazyhouse's falls are not depth
+
+- The koth probe on 30 crazyhouse falls (queues 290, 291, builds 41 and
+  43, set up from the moves): mean depth ours 7.4, 10.4, 13.7 at 1, 4
+  and 16 s; FSF 10.6, 12.4, 14.6 at 0.25, 1 and 4 s. In 26 of 30 FSF at
+  0.25 s scores 150 cp or more under our 1 s score; at 16 s, a ply
+  deeper than FSF at 1 s, we stay 150 cp over it in 24, often on the
+  same move with the other sign (f1g2: ours +736, FSF -469 and -184).
+- So crazyhouse is an evaluation gap, as threecheck is and koth is not:
+  the king group of the D table (-3.56). Its known inputs are played
+  and closed: the hand attackers (KH, queue266), the typed check weights
+  (tpiece, tqueen), the size of the sum (DX, kdmob).
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
