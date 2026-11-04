@@ -2968,6 +2968,19 @@ round a (FSF's phase from its xiangqi values):
   the endgame occupancy model against FSF's piece gain per variant
   (standard, xiangqi, grand, crazyhouse), where our sliders gain 23% to
   26%.
+- Crazyhouse never blends the endgame (the opening weight is 1.00 at
+  plies 20, 40 and 60 of 40 games), so pieceg reaches its play only
+  through `p_value!`'s interpolation (the exchange, the margins). Its
+  two crazyhouse results (+23.8, +18.9) are near 1.5σ together; not
+  chased further.
+- Two more links tested and refuted: FSF's corner bonus for a king in a
+  race of checks (+100 middle game on files a, b, g, h of the first
+  rank) explains -0.16 of threecheck's -0.60 material gap and none of
+  fivecheck's -0.40. Crazyhouse's royal parts (full rings, FSF / ours,
+  our royal): sum 0.97 / 0.60, attackers 0.24 / 0.05, hits 0.19 / 0.08,
+  weak 0.22 / 0.13: FSF's hand attackers and their drop hits, which is
+  KH (queue266, +1.3 ± 21.2); nothing it needed has changed since build
+  36, so it stays closed.
 
 ### Grand's chain, built again from the falls
 
