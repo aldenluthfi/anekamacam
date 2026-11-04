@@ -3257,6 +3257,9 @@ round a (FSF's phase from its xiangqi values):
   σ near 12.7, 2.4σ). No forfeits. Merged as build 45. The count of
   defenders and neighbours, FSF's form, carries where PM's one part did
   not; the root of plan 29's horde chain (the pawn mass form) pays.
+- Queue295: build 45 in euroshogi, capablanca, gothic and extinction
+  (the next weakest valid variants of the build 40 sweep), one round,
+  for their falls.
 
 ### Grand's chain, built again from the falls
 
