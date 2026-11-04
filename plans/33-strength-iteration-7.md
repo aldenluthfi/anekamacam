@@ -32,7 +32,11 @@ time: build 40, +16.5 ± 7.2 over six pooled rounds (queues 281 and
 as well as 2000; the 2100 half is done, the 2000 half is paused after
 two variants (user, 2026-10-29). From 2026-11-02 the work is on the
 weakest variants against FSF 2100. In a race of checks the dearest type
-gives no unsafe check: build 41, fivecheck +82.2 (queue289). At build
+gives no unsafe check: build 41, fivecheck +82.2 (queue289). Builds
+42 to 44 are speed with the same nodes: the attack maps in fixed
+arrays, the word count passed to the attack casts, and the goal race
+flooded with maps (koth x0.85). seefsf, goalz and the typed or race
+forms of the danger did not merge or stay closed. At build
 40, and at every tenth build
 after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
@@ -3125,8 +3129,8 @@ round a (FSF's phase from its xiangqi values):
   Rule set before the games: +2σ in koth.
 - Queue292, goalz minus build 43 in koth: +14.5, +16.7, -3.6 (+9.2,
   σ near 20). No forfeits. Not merged; the binary is deleted,
-  `plan33-goalz` stays. The nodes it saves are near half of koth's
-  excess over standard, and the depth they buy is worth little in play,
+  `plan33-goalz` stays. The nodes it saves are most of koth's excess
+  over standard, and the depth they buy is worth little in play,
   as a doubling is worth less to us (the LMR chain).
 - The goalz build ran at normal priority for ten minutes beside
   queue291's round a crazyhouse run of seefsf; if crazyhouse decides
@@ -3141,6 +3145,12 @@ round a (FSF's phase from its xiangqi values):
   43 of the 44 variants; taikyoku (no goal rule; its bench takes near
   10 GB, and the machine ran short beside queue291) waits for a free
   machine before the merge.
+- Build 44 (goalfast): taikyoku's seeded search the same (8086 nodes),
+  so the same nodes in all 44 variants. On the quiet machine, medians
+  of five: the twelve koth falls at depth 9 x0.846; benches standard
+  x1.003 (nine runs, depth 10), xiangqi x0.971, grand x1.036,
+  crazyhouse x1.008, shogi x1.021, capablanca x1.013, all within one
+  binary's spread. Merged on speed.
 
 ### Threecheck's falls are not depth
 
@@ -3151,10 +3161,12 @@ round a (FSF's phase from its xiangqi values):
   FSF at 0.25 s scores 150 cp or more under our 1 s score; at 16 s,
   two plies deeper than FSF at 4 s, we stay 150 cp over it in 10.
 - Along FSF's lines (14 falls) our score drops within one to four plies
-  in most; at the lines' ends FSF's static score is under our depth 1
-  score in 13 of 14, by 2.4 to 8.9 pawns in 9 (FSF -7.54 against our
-  +1.41 a rook down with one check left: its race +3.61 and king safety
-  -4.81 in the endgame, ours +5.9 and -0.9).
+  in most; at the lines' ends FSF's depth 1 score is under ours in 12 of
+  13, by 0.9 to 4.9 pawns (mean near 2.5). In koth the same ends agree
+  (ours higher in 6 of 11, mostly within 2 pawns), so koth stays a
+  search gap. One threecheck end, static against static: FSF -7.54,
+  ours +1.04, a rook down with one check left (its race +3.61 and king
+  safety -4.81 in the endgame, ours +5.9 and -0.9).
 - At the ends FSF's king safety for the root side is far under ours
   (in FSF's pawns: -8.6 against -1.3, -3.6 against -0.2, -2.9 against
   -0.1); the race differs both ways by phase (ours one value, FSF's
