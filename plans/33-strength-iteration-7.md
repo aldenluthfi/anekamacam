@@ -3188,9 +3188,11 @@ round a (FSF's phase from its xiangqi values):
   to 874) less the cut for no major (FSF's rook is no major either).
   FSF's 2590, all of it the same check: its rook weight 1087 against
   our 600 in its units, risen alike. The cause is FSF's check weights by
-  named piece, the closed root of the standard royal chain (tpiece and
-  tqueen, queue267); the race rise only makes it larger. Threecheck's
-  chain stops there too.
+  named piece, where the standard royal chain stopped (no rule-derived
+  form of the typed table); the race rise only makes it larger. No game
+  has played a check weight other than FSF's fairy row: the fit test
+  scaled ours as one only on positions (it moved the mean, not the
+  fit), and tpiece and tqueen (queue267) were threat forms.
 
 ### Crazyhouse's falls are not depth
 
@@ -3201,9 +3203,26 @@ round a (FSF's phase from its xiangqi values):
   deeper than FSF at 1 s, we stay 150 cp over it in 24, often on the
   same move with the other sign (f1g2: ours +736, FSF -469 and -184).
 - So crazyhouse is an evaluation gap, as threecheck is and koth is not:
-  the king group of the D table (-3.56). Its known inputs are played
-  and closed: the hand attackers (KH, queue266), the typed check weights
-  (tpiece, tqueen), the size of the sum (DX, kdmob).
+  the king group of the D table (-3.56). Its known inputs: the hand
+  attackers (KH, queue266, closed), the size of the old static danger
+  (DX, before KD) and the mobility input (kdmob, closed); the check
+  weight has not played (above).
+
+### checkmean, the check weight from FSF's typed rows
+
+- Threecheck's end and crazyhouse's per-side check both find our safe
+  checks small: FSF's rook 1087 against our 600 (its units) at the
+  threecheck end; crazyhouse units FSF 1782 against ours 1252.
+- Ours takes FSF's fairy row (600, 900; its weight for types it does
+  not name) for every type. Its named chess rows: knight 803 and 1292,
+  bishop 639 and 974, rook 1087 and 1878, queen 759 and 1132; mean 822
+  and 1319, 1.37 and 1.47 times the fairy row.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| KD (plan 29) | merged, the fairy row for all | port reads no names | | the mean of the named rows, one number still |
+| the fit test (plan 33) | checks scaled as one move the mean, fit 0.88 | | positions only, no games | games, in the variants where checks decide |
+| DX (plan 29) | danger x10, -64.6 | errors rule at FSF's size | the old static danger, before KD | KD's sum, the check part only, x1.4 |
 
 ### The next weakest variants
 
