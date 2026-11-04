@@ -3123,6 +3123,11 @@ round a (FSF's phase from its xiangqi values):
   build 43 33569, the same positions as standard 21800.
   Queue292: build 43 and goalz in koth, three rounds, after queue291.
   Rule set before the games: +2σ in koth.
+- Queue292, goalz minus build 43 in koth: +14.5, +16.7, -3.6 (+9.2,
+  σ near 20). No forfeits. Not merged; the binary is deleted,
+  `plan33-goalz` stays. The nodes it saves are near half of koth's
+  excess over standard, and the depth they buy is worth little in play,
+  as a doubling is worth less to us (the LMR chain).
 - The goalz build ran at normal priority for ten minutes beside
   queue291's round a crazyhouse run of seefsf; if crazyhouse decides
   queue291, that run plays again.
