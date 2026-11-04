@@ -3097,6 +3097,33 @@ round a (FSF's phase from its xiangqi values):
   10 GB, and the machine ran short beside queue291) waits for a free
   machine before the merge.
 
+### Threecheck's falls are not depth
+
+- The same probe as koth's on 30 threecheck falls (queues 289, 290),
+  each set up as its game's first position and moves, as the record's
+  FEN leaves out the checks given. Mean depth: ours 9.6, 13.0, 17.3 at
+  1, 4 and 16 s; FSF 10.3, 12.7, 15.3 at 0.25, 1 and 4 s. In 20 of 30
+  FSF at 0.25 s scores 150 cp or more under our 1 s score; at 16 s,
+  two plies deeper than FSF at 4 s, we stay 150 cp over it in 10.
+- Along FSF's lines (14 falls) our score drops within one to four plies
+  in most; at the lines' ends FSF's static score is under our depth 1
+  score in 13 of 14, by 2.4 to 8.9 pawns in 9 (FSF -7.54 against our
+  +1.41 a rook down with one check left: its race +3.61 and king safety
+  -4.81 in the endgame, ours +5.9 and -0.9).
+- At the ends FSF's king safety for the root side is far under ours
+  (in FSF's pawns: -8.6 against -1.3, -3.6 against -0.2, -2.9 against
+  -0.1); the race differs both ways by phase (ours one value, FSF's
+  3600 and 1000 over the checks left squared). So threecheck's D is the
+  danger to our own royal, the king group of the D table (-0.98), which
+  uq2 did not touch there.
+- Refuted link: FSF's race rise `7 / (3 + left)` scales only the safe
+  checks (it is added before the rest of the sum, `evaluate.cpp` 814
+  against 849), as ours does; its other race rules (any check safe with
+  one left, ring weakness and unsafe checks twice, hits five times, no
+  major halved, the middle game part carried to the endgame) are all in
+  ours. FSF's sum also has pins, flank attacks, mobility and shelter,
+  which ours leaves out in every variant.
+
 ### Grand's chain, built again from the falls
 
 - The fall probe on 30 grand falls (queue287, build 40): in 11 FSF's
