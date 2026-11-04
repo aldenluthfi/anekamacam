@@ -3279,6 +3279,10 @@ round a (FSF's phase from its xiangqi values):
 - Queue295: build 45 in euroshogi, capablanca, gothic and extinction
   (the next weakest valid variants of the build 40 sweep), one round,
   for their falls.
+- Queue295, build 45: euroshogi -17.4 ± 47.0 (build 40 -34.9),
+  capablanca -5.2 ± 50.7 (-31.4), gothic -19.1 ± 47.3 (-21.7),
+  extinction -17.4 ± 48.5 (-20.0). No forfeits. All within one interval
+  of 2100; the weak set stays crazyhouse, threecheck, koth and grand.
 
 ### Grand's chain, built again from the falls
 
