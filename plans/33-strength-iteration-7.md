@@ -2982,6 +2982,20 @@ round a (FSF's phase from its xiangqi values):
   KH (queue266, +1.3 ± 21.2); nothing it needed has changed since build
   36, so it stays closed.
 
+### Grand's search half: speed
+
+- Two quiet grand middlegames, nodes to depth 11: ours 118352 and 121221
+  (556 and 499 ms), FSF 70045 and 85328 (149 and 147 ms); FSF reaches
+  depth 14 in 833 and 520 ms. Our tree is 1.4 to 1.7 times FSF's at the
+  same depth and our speed near 0.45 of its: the speed is most of the
+  depth gap.
+- The `hotpath` profile of build 41's grand bench at depth 7 (quiet
+  machine; 142k nodes a second without the timers): evaluation near 31%
+  of the search (the attack pass 25%, 5.3 µs a call), the move pick 16%
+  (the exchange 10%), board move generation 12% (7 µs a call), make
+  12%, the check test 6%. No block is large alone (plan 32's finding);
+  a speed gain needs several of them, each node-identical.
+
 ### Grand's chain, built again from the falls
 
 - The fall probe on 30 grand falls (queue287, build 40): in 11 FSF's
