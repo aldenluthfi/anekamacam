@@ -3048,6 +3048,44 @@ round a (FSF's phase from its xiangqi values):
   capablanca x0.979; of five: xiangqi x0.976, standard x0.938, shogi
   x0.997, crazyhouse x1.001. Merged on speed.
 
+### seefsf, the exchange prune at every depth
+
+- Crazyhouse's tree at depth 8 (a counting diagnostic, deleted): of
+  26994 searched moves, drops 37%, captures 38%, checks 8% (each
+  extended), reduced 24%; standard has captures at 26%. Captures are the
+  largest class there, and the prune that cuts losing ones is worth
+  little to us: off, crazyhouse -8.1 (queue236), where FSF's own is worth
+  -75.0 ± 30.8 (seecap, plan 29c).
+- Our prune: depth 5 and under, a loss above 25% of the most valuable
+  piece a ply. FSF's: any depth, `-218 d` (8.6% of its queen), `-338 d`
+  (13.3%) with drops. Ours only cuts a capture that loses at least a
+  quarter queen at depth 1, a whole queen at depth 4.
+- seeall (the depth limit gone, 25% kept): the same nodes at depth 12
+  in crazyhouse and standard, as no capture loses more than 1.5 queens.
+  So the step, not the depth limit, is the difference.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| `see_prune_ratio` unreachable (plan 16) | a mate found in time again: no | futility, not this prune | one position | games |
+| seeprune off (queue236) | standard -39.9, xiangqi +47.4, crazyhouse -8.1, capablanca +11.8 | not known | the 25% step | FSF's step, every depth |
+
+- seefsf (`plan33-seefsf`, d36258e, from build 43): `see_step` is one
+  number, 8.6% of the most valuable piece, 13.3% where the captures
+  fill a hand, at every depth. Seeded bench: crazyhouse 386620
+  (442555), grand 460348 (505020), standard 142859 (142862), xiangqi
+  the same. Twenty crazyhouse positions at the game clock: mean depth
+  35.80 against 35.75. Smoke 3-1 in crazyhouse, no forfeits.
+- Queue291: build 43 and seefsf in crazyhouse, threecheck, fivecheck,
+  koth, grand and standard, three rounds; rule set before the games:
+  +2σ on the mean of the six, none below -2σ.
+- Queue291 (cut after eight pairs; the ten left needed +36.2 each
+  against a trend of -7.0): seefsf minus build 43, crazyhouse +26.4,
+  -20.8; threecheck +37.5, -1.8; fivecheck -50.7; koth -30.2; grand
+  +34.2; standard -50.5. No forfeits. Not merged; the binary is
+  deleted, `plan33-seefsf` stays as the record. FSF's step does not pay
+  for us: the cut captures are the ones our search needs, as queue236's
+  near-zero value of the prune said.
+
 ### Why chain: koth's search
 
 - D for koth, tested: 30 falls of build 41 (queues 289, 290, a fall of
