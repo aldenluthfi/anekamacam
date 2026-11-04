@@ -3048,6 +3048,55 @@ round a (FSF's phase from its xiangqi values):
   capablanca x0.979; of five: xiangqi x0.976, standard x0.938, shogi
   x0.997, crazyhouse x1.001. Merged on speed.
 
+### Why chain: koth's search
+
+- D for koth, tested: 30 falls of build 41 (queues 289, 290, a fall of
+  200 cp or more from 0 or more), our search at 1, 4 and 16 s, FSF's
+  (full strength, classical) at 0.25, 1 and 4 s. Mean depth: ours 8.0,
+  11.5, 14.4; FSF 11.3, 14.0, 17.0. In 17 of 29 FSF at 0.25 s scores
+  150 cp or more under our 1 s score; at 16 s, with three plies more
+  than FSF's 0.25 s, we stay 150 cp over it in 10 of them.
+- Along FSF's lines (11 falls) our score drops within one to five plies
+  in 7, and our static score at the line's end mostly agrees with the
+  drop: the gap is the search, as the falls note said.
+- The same positions as koth and as standard, our search to depth 9:
+  koth searches 1.6 times the nodes (geometric mean of ten) at half the
+  node rate (45k to 80k against 90k to 194k). Koth costs near three
+  times standard's time for each depth.
+- The node count: GZ (plan 27) keeps every move of a goal piece from
+  pruning and reduction, so in koth no king move is pruned or reduced.
+  FSF prunes and reduces a goal piece's move as any other.
+- The node rate: a sampled profile of a koth search (depth 11 from a
+  fall) gives `goal_race!` 19.9% of our samples, its landing loop the
+  hottest lines of the engine, the attack pass 8.5%.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| goal rule without pruning (plan 27) | koth depth 9 where standard 13 | no pruning | | |
+| GZ (plan 27) | depth 14 in 3 s, verdict lost | | no goal race term (GR, GH came after) | the race term reads the walk; FSF exempts nothing |
+| GH (plan 29) | +43 at 60% of the speed, merged | | | the speed was never won back |
+
+- goalz (`plan33-goalz`, a2ced30, from build 43): only a goal piece's
+  move onto the zone is never pruned or reduced. On the 30 falls: mean
+  depth 8.8 at 1 s (8.0), 12.1 at 4 s (11.5); the mean distance to
+  FSF's 0.25 s score 243 and 163 cp (246, 168). Other variants have no
+  goal rule (standard bench equal). Smoke 0-2-2 in koth, no forfeits.
+  Queue292: build 43 and goalz in koth, three rounds, after queue291.
+  Rule set before the games: +2σ in koth.
+- The goalz build ran at normal priority for ten minutes beside
+  queue291's round a crazyhouse run of seefsf; if crazyhouse decides
+  queue291, that run plays again.
+- goalfast (`plan33-goalfast`, from build 43): the flood of
+  `goal_race!` joins landing maps (one map for each goal piece and
+  square) and sorts a word of new squares by its holds at once; only an
+  own pawn is looked at alone. It must give the same nodes everywhere.
+- goalfast: the same score and nodes as build 43 on twelve koth falls at
+  depth 9, time x0.60 to x0.95 (mean near x0.78); the profile of the
+  same search gives `goal_race!` 9.3% (19.9%). The same seeded nodes in
+  43 of the 44 variants; taikyoku (no goal rule; its bench takes near
+  10 GB, and the machine ran short beside queue291) waits for a free
+  machine before the merge.
+
 ### Grand's chain, built again from the falls
 
 - The fall probe on 30 grand falls (queue287, build 40): in 11 FSF's

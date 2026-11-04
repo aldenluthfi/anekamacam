@@ -2903,7 +2903,8 @@ pub fn derive_danger_parameters(state: &mut State) {
 ///
 /// Sets the goal race of the goal rule:
 ///
-/// - landings : for each goal piece and square, its empty-board moves
+/// - landings : for each goal piece and square, the map of its empty-board
+///   moves
 /// - value    : the worth of one zone square one move away, doubled
 ///
 /// A vector that needs a screen or only captures cannot move on an empty
@@ -2925,7 +2926,8 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
     };
 
     let set = goal.set.clone();
-    let mut landings = vec![Vec::new(); piece_count * board_size];
+    let words = (board_size + 63) >> 6;
+    let mut landings = vec![0u64; piece_count * board_size * words];
 
     for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
         if !set[piece_index] {
@@ -2936,7 +2938,8 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
         let row = piece_index * board_size;
 
         for from in 0..board_size {
-            landings[row + from] = state.statics.relevant_moves[row + from]
+            let map = (row + from) * words;
+            let targets = state.statics.relevant_moves[row + from]
                 .iter()
                 .filter_map(|vector| {
                     derive_vector_chance(state, vector, 0.0)
@@ -2947,9 +2950,12 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
                     let rank = from as i32 / files + rank_delta * sign;
 
                     (file >= 0 && file < files && rank >= 0 && rank < ranks)
-                        .then_some((rank * files + file) as Square)
-                })
-                .collect();
+                        .then_some((rank * files + file) as usize)
+                });
+
+            for to in targets {
+                landings[map + (to >> 6)] |= 1u64 << (to & 63);
+            }
         }
     }
 
