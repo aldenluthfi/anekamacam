@@ -55,12 +55,12 @@ fivecheck | 4k3/8/8/8/8/8/8/R5K1 w - - 0 1 | a1a8 e8e7 a8a7 e7e6 a7a6 e6e5 a6a5 
 koth | 4k3/8/8/8/8/8/4K3/8 w - - 0 1 | e2e3 e8e7 e3e4 | White wins | king-of-the-hill: White king reaches the centre
 
 # --- material extinction ---------------------------------------------------
-kinglet | k7/pR6/8/8/8/8/P6K/8 w | b7a7 | White wins | kinglet: Black loses its last pawn
+kinglet | k7/pR6/8/8/8/8/P6K/8 w - - | b7a7 | White wins | kinglet: Black loses its last pawn
 extinction | rnb1kbnr/pppppppp/8/8/8/8/PPPqPPPP/RNBQKBNR w * | d1d2 | White wins | extinction: Black loses its only queen
 extinction | rnb1kbnr/pppppppp/8/8/8/8/PPPqPPPP/RNBQKBNR w * | | Ongoing | extinction: every black type still present, not yet decided
-horde | r3k3/8/8/8/8/8/P7/8 b * | a8a2 | Black wins | horde: White's last piece captured (army extinct)
-kinglet | 7k/P7/8/8/8/8/7p/K7 w | a7a8q | Black wins | kinglet: White promotes its own last pawn out of existence
-kinglet | 7k/P7/8/8/8/8/7p/K7 w | | Ongoing | kinglet: that pawn still on the board decides nothing
+horde | r3k3/8/8/8/8/8/P7/8 b - - | a8a2 | Black wins | horde: White's last piece captured (army extinct)
+kinglet | 7k/P7/8/8/8/8/7p/K7 w - - | a7a8k | Black wins | kinglet: White promotes its own last pawn out of existence
+kinglet | 7k/P7/8/8/8/8/7p/K7 w - - | | Ongoing | kinglet: that pawn still on the board decides nothing
 extinction | 1nbqkbnr/Pppppppp/8/8/8/8/8/RNBQKBNR w * | a7a8q | Black wins | extinction: White promotes its own last pawn out of existence
 
 # --- perpetual reaches search before it reaches the game -------------------
