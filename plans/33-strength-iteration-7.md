@@ -3190,6 +3190,16 @@ round a (FSF's phase from its xiangqi values):
   tqueen, queue267); the race rise only makes it larger. Threecheck's
   chain stops there too.
 
+### The next weakest variants
+
+- Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
+  The next weakest valid variants of the build 40 sweep join the set:
+  shogi and horde (-52.5 each), then euroshogi (-34.9) and capablanca
+  (-31.4).
+- Queue293: build 44 in shogi, horde and koth, one round, for the falls
+  of the first two and build 44's koth in play. Smoke 4-0 in koth, no
+  forfeits.
+
 ### Grand's chain, built again from the falls
 
 - The fall probe on 30 grand falls (queue287, build 40): in 11 FSF's
