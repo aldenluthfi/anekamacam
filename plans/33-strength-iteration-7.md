@@ -3026,6 +3026,22 @@ round a (FSF's phase from its xiangqi values):
   and faster: merged on speed (plan 32's rule).
 - Next by the profile: `is_square_attacked!` (the check test walks every
   relevant attack vector), `piece_attacks!` and the move generator.
+- Three node-identical tries after build 42, each with the same nodes as
+  build 42 in all 44 variants, none faster in the large variants:
+  - attacker keys (a compact list of piece and start beside the attack
+    masks, grouped by piece type so an absent type is skipped): grand
+    x1.068, x1.028, standard x0.95, x0.87;
+  - prefix skip (a slide of `n + 1` steps is skipped once the one of `n`
+    failed before its last leg): x1.02 to x1.06, standard x1.22; the
+    longer slides of a blocked line already fail fast;
+  - start index (the attack masks of a square grouped by start square,
+    only the occupied starts visited, by bit rank): five-run medians
+    grand x1.021, shogi x1.025, capablanca x1.011, standard x0.947.
+- The check test's line (`move_list.rs:51`, 6% to 8% of the samples) is
+  the comparison itself, not the memory; skipping entries costs as much
+  as it saves. The spread between two binaries is larger than one
+  binary's (grand's base 2.35 to 2.90 s in one set of five), so a speed
+  claim needs a median of five or more runs.
 
 ### Grand's chain, built again from the falls
 
