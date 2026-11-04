@@ -2996,6 +2996,37 @@ round a (FSF's phase from its xiangqi values):
   12%, the check test 6%. No block is large alone (plan 32's finding);
   a speed gain needs several of them, each node-identical.
 
+### A sampled profile, and build 42
+
+- The machine is quiet between queues (a bench repeats within ±0.4%).
+  `wpr` records CPU samples; `tracerpt` gives each sample's address; a
+  build of main with line tables (`CARGO_PROFILE_RELEASE_DEBUG` set to
+  line tables, not stripped) and `addr2line` give the source line, inline
+  frames included; each line goes to its enclosing macro. Grand bench,
+  3767 samples in our image: the attack pass's own lines 18.1%,
+  `piece_attacks!` 10.4%, `process_multi_leg_vector!` 10.2%,
+  `is_square_attacked!` 6.6%, `lva!` 4.3%, `pick_by_score!` 3.3%; setup
+  (parsing, keys) near 6%.
+- Doubling a block with `std::hint::black_box` gives its true cost
+  (the doubled-cast test before had no `black_box`, and the compiler
+  dropped the copy): the attack pass is 32% of the grand bench, 36% in
+  capablanca, 30% in crazyhouse; its map casts 9.2% of grand's.
+- Cause of the pass's own cost: each map read is a runtime-sized,
+  bounds-checked `Vec` index over a word count known only at run time.
+  A probe with two fixed words and a local array: grand x0.87.
+- Build 42 (main e562101): `attack_terms_on!` takes the word count and
+  the maps; `attack_terms` gives it a fixed array for one or two words
+  (every key variant) and the scratch maps for a larger board. Seeded
+  bench nodes equal build 41's in the 17 variants with a bench suite,
+  seeded search nodes from the start in the other 27 (chushogi and
+  taikyoku on the large path). Bench time against build 41, two runs:
+  grand x0.846, x0.804; shogi x0.850, x0.839; capablanca x0.887,
+  x0.864; crazyhouse x0.889, x0.876; minishogi x0.889, x0.899; xiangqi
+  x0.961, x0.862; standard x0.974, x0.914; chushogi level. Node-identical
+  and faster: merged on speed (plan 32's rule).
+- Next by the profile: `is_square_attacked!` (the check test walks every
+  relevant attack vector), `piece_attacks!` and the move generator.
+
 ### Grand's chain, built again from the falls
 
 - The fall probe on 30 grand falls (queue287, build 40): in 11 FSF's
