@@ -962,11 +962,13 @@ macro_rules! first_blocker {
 /// - square     : usize      -> its square
 /// - occupied   : &Board     -> squares that hold a piece
 /// - attacks    : &mut Board -> board that gets the attacked squares
+/// - words      : usize      -> words of the board area, optional
 ///
 /// Notes:
 /// An attacked square can hold an own piece: the piece defends it. A board
 /// of at most two words takes a path on one 128-bit integer: one AND, one
-/// bit scan and one AND NOT for each line, with no loop over words.
+/// bit scan and one AND NOT for each line, with no loop over words. A
+/// caller that knows the words as a constant passes them.
 ///
 #[macro_export]
 macro_rules! piece_attacks {
@@ -976,10 +978,23 @@ macro_rules! piece_attacks {
         $square:expr,
         $occupied:expr,
         $attacks:expr
+    ) => {
+        piece_attacks!(
+            $state, $piece_index, $square, $occupied, $attacks,
+            board_words!($occupied)
+        )
+    };
+    (
+        $state:expr,
+        $piece_index:expr,
+        $square:expr,
+        $occupied:expr,
+        $attacks:expr,
+        $words:expr
     ) => {{
         let statics = &$state.statics;
         let board_size = statics.board_size;
-        let words = board_words!($occupied);
+        let words: usize = $words;
         let origin = $square as usize;
         let entry = $piece_index as usize * board_size + origin;
         let ray_from = |line: usize, square: usize| {

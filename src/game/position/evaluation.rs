@@ -1174,7 +1174,8 @@ macro_rules! attack_terms_on {
 
                         attacks.2[..span].fill(0);
                         piece_attacks!(
-                            $state, piece_index, square, occupied, attacks
+                            $state, piece_index, square, occupied, attacks,
+                            words
                         );
 
                         for word in 0..words {
@@ -1390,7 +1391,9 @@ macro_rules! attack_terms_on {
                     }
 
                     attacks.2[..span].fill(0);
-                    piece_attacks!($state, mirror, royal, occupied, attacks);
+                    piece_attacks!(
+                        $state, mirror, royal, occupied, attacks, words
+                    );
 
                     let mut safe = 0u32;
 
