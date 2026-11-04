@@ -3163,6 +3163,15 @@ round a (FSF's phase from its xiangqi values):
   major halved, the middle game part carried to the endgame) are all in
   ours. FSF's sum also has pins, flank attacks, mobility and shelter,
   which ours leaves out in every variant.
+- E, tested (a diagnostic, `plan33-dlog`, deleted, logging the sum's
+  parts) at the end above (white, one check left; black, a rook, two
+  left): our sum 630 units, all of it one safe rook check (364, risen
+  to 874) less the cut for no major (FSF's rook is no major either).
+  FSF's 2590, all of it the same check: its rook weight 1087 against
+  our 600 in its units, risen alike. The cause is FSF's check weights by
+  named piece, the closed root of the standard royal chain (tpiece and
+  tqueen, queue267); the race rise only makes it larger. Threecheck's
+  chain stops there too.
 
 ### Grand's chain, built again from the falls
 
