@@ -10,6 +10,8 @@
 //! Created: 19/04/2026
 //! Author : Alden Luthfi
 
+use crate::*;
+
 /*----------------------------------------------------------------------------*\
                            TERMINAL AND DRAW SCORING
 \*----------------------------------------------------------------------------*/
@@ -771,7 +773,7 @@ macro_rules! castling_bonus {
 ///
 /// The passed value is a part of the promotion gain for the steps of the
 /// pawn to promotion. Its path and the royals near it are priced in
-/// `attack_terms!`. Derivation makes each mask from the moves of the pawn,
+/// `attack_terms_on!`. Derivation makes each mask from the moves of the pawn,
 /// so the same tests work for all pawn types:
 ///
 /// - pawn_path         : squares that the pawn walks to promote
@@ -1013,7 +1015,7 @@ macro_rules! pawn_structure {
                                   ATTACK TERMS
 \*----------------------------------------------------------------------------*/
 
-/// attack_terms!
+/// attack_terms_on!
 ///
 /// Gives the threat and mobility value, White minus Black, for the opening
 /// and the endgame. One pass makes the attack map of each piece and keeps
@@ -1078,6 +1080,8 @@ macro_rules! pawn_structure {
 ///
 /// Params:
 /// - state: &mut State -> position to score, with the threat scratch
+/// - words: usize      -> words of the board area
+/// - maps : [u64]      -> 18 zeroed regions of `words`, the colour maps
 ///
 /// Return:
 /// (i32, i32)          -> opening and endgame value, White minus Black
@@ -1095,14 +1099,14 @@ macro_rules! pawn_structure {
 /// are Fairy-Stockfish's for its fairy pieces.
 ///
 #[macro_export]
-macro_rules! attack_terms {
-    ($state:expr) => {
+macro_rules! attack_terms_on {
+    ($state:expr, $words:expr, $maps:expr) => {
         hotpath::measure_block!("eval::attack_terms", {
             let statics = &$state.statics;
             let board_size = statics.board_size;
-            let words = (board_size + 63) >> 6;                                 /* one bit per square, 64 to a word   */
+            let words = $words;                                                 /* one bit per square, 64 to a word   */
             let span = words.max(2);                                            /* the 128-bit path reads two words   */
-            let maps = &mut $state.scratch.threat_maps;
+            let maps = &mut $maps;
             let pawn_maps = &mut $state.scratch.threat_pawns;
             let kinds = &mut $state.scratch.threat_kinds;
             let [occupied, attacks] = &mut $state.scratch.threat_boards;
@@ -1112,17 +1116,10 @@ macro_rules! attack_terms {
             let (guard, unsafe_checks) = (7, 8);
             let danger = statics.eval.danger_cost[0] > 0;
 
-            if maps.len() != 18 * words {
-                maps.clear();                                                   /* a new variant sizes it again       */
-                maps.resize(18 * words, 0);
-            }
-
             if danger {
                 kinds.clear();
                 kinds.resize(statics.pieces.len() * words, 0);
             }
-
-            maps.fill(0);
 
             for color in (0..2).filter(|_| danger) {
                 let [royal] = $state.royal_list[color][..] else {
@@ -1500,6 +1497,46 @@ macro_rules! attack_terms {
     };
 }
 
+/// attack_terms
+///
+/// Gives [`attack_terms_on!`] for the words of the board. A board of one
+/// or two words takes the maps in a fixed array, so the word loops are
+/// short and their bounds are known; a larger board takes the scratch maps.
+///
+/// Params:
+/// - state: &mut State -> position to score, with the threat scratch
+///
+/// Return:
+/// (i32, i32)          -> opening and endgame value, White minus Black
+///
+pub fn attack_terms(state: &mut State) -> (i32, i32) {
+    let words = (state.statics.board_size + 63) >> 6;
+
+    match words {
+        1 => {
+            let mut maps = [0u64; 18];
+
+            attack_terms_on!(state, 1, maps)
+        }
+        2 => {
+            let mut maps = [0u64; 36];
+
+            attack_terms_on!(state, 2, maps)
+        }
+        _ => {
+            let mut maps = mem::take(&mut state.scratch.threat_maps);
+
+            maps.clear();
+            maps.resize(18 * words, 0);
+
+            let value = attack_terms_on!(state, words, maps);
+
+            state.scratch.threat_maps = maps;
+            value
+        }
+    }
+}
+
 /*----------------------------------------------------------------------------*\
                              PHASE SCORE COMPONENTS
 \*----------------------------------------------------------------------------*/
@@ -1546,7 +1583,7 @@ macro_rules! opening_score {
 /// race and the extinction threats. They do not depend on the phase, so
 /// the evaluation calculates them once and adds the same value to the two
 /// halves before the blend. The goal race needs the attack maps, so it is
-/// in [`attack_terms!`].
+/// in [`attack_terms_on!`].
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -1728,7 +1765,7 @@ macro_rules! evaluate_position {
             if lazy - margin >= $beta || lazy + margin <= $alpha {
                 lazy
             } else {
-                let (attack_opening, attack_endgame) = attack_terms!($state);
+                let (attack_opening, attack_endgame) = attack_terms($state);
 
                 finish(opening + attack_opening, endgame + attack_endgame)
             }

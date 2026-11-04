@@ -869,7 +869,7 @@ pub struct Scratch {
     pub see_scratch: Vec<u64>,                                                  /* multi-capture data of see_moves    */
     pub pawn_rosters: [Vec<PawnEntry>; 2],                                      /* colour to its pawns, one sweep old */
     pub pawn_table: PTable,                                                     /* arrangement to its two scores      */
-    pub threat_maps: Vec<u64>,                                                  /* colour maps of `attack_terms!`     */
+    pub threat_maps: Vec<u64>,                                                  /* maps of a board past two words     */
     pub threat_boards: [Board; 2],                                              /* occupancy and one piece's attacks  */
     pub threat_pawns: Vec<u64>,                                                 /* each pawn's slot, square, its map  */
     pub threat_kinds: Vec<u64>,                                                 /* each piece type's union of maps    */

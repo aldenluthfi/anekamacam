@@ -70,6 +70,7 @@ pub use crate::game::moves::pattern_parse::{
     parse_pattern,
 };
 pub use crate::game::position::{
+    evaluation::attack_terms,
     hash::{
         hash_pawns, hash_position, hash_virgin_board, qsearch_key, search_key,
         PositionHash,

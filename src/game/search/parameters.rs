@@ -3427,7 +3427,7 @@ fn derive_pawn_advancement(
 ///
 /// Notes:
 /// The base of a passed pawn is small. The unit prices its path and the
-/// royals near it in `attack_terms!`, where the attack maps are. A pawn
+/// royals near it in `attack_terms_on!`, where the attack maps are. A pawn
 /// that cannot promote uses its own value, times its squared progress, and
 /// has no unit. Only the connected term has an endgame value. A fault is
 /// not less bad in the endgame.
