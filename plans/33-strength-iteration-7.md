@@ -3042,6 +3042,11 @@ round a (FSF's phase from its xiangqi values):
   as it saves. The spread between two binaries is larger than one
   binary's (grand's base 2.35 to 2.90 s in one set of five), so a speed
   claim needs a median of five or more runs.
+- Build 43 (main 1f067c5): `piece_attacks!` takes the word count when
+  the caller knows it as a constant, and the attack pass passes it. The
+  same nodes in all 44 variants; medians of nine: grand x0.984,
+  capablanca x0.979; of five: xiangqi x0.976, standard x0.938, shogi
+  x0.997, crazyhouse x1.001. Merged on speed.
 
 ### Grand's chain, built again from the falls
 
