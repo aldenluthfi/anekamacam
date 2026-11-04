@@ -3238,8 +3238,9 @@ round a (FSF's phase from its xiangqi values):
   crazyhouse +11.1, +9.5; threecheck +7.1, -17.7; koth -21.4, -33.6;
   grand -24.3, -45.7; standard +42.1; xiangqi +45.0. No forfeits. Not
   merged; the binary is deleted, `plan33-checkmean` stays.
-- The sign splits again: standard and xiangqi gain near 2σ each, koth
-  and grand lose. In koth the royal must walk to the goal, and a dearer
+- The sign splits again: standard and xiangqi gain, koth and grand
+  lose, each by 1 to 1.4σ alone. A reading, not tested: in koth the
+  royal must walk to the goal, and a dearer
   check holds it back; grand's compound pieces give many checks, so a
   dearer check fires more where it is not an attack. The weight that
   helps a royal that stays home costs one that must move, so one number
