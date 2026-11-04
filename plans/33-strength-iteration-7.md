@@ -2955,6 +2955,19 @@ round a (FSF's phase from its xiangqi values):
   (xiangqi was pieceg's worst, -28.1), three rounds. Rule set before the
   games: +2σ on the mean of the seven, none below -2σ. Smoke 1-2-1 in
   grand, no forfeits.
+- Queue290 (cut with four pairs left; they needed +64 each): pieceg
+  minus build 41, fivecheck -3.5, +54.0 (+25.3); crazyhouse +34.5,
+  +12.2, +10.1 (+18.9); grand +42.0, -5.7, +18.9 (+18.4); threecheck
+  +70.4, -3.5, -37.6 (+9.8); koth -14.3, +2.0 (-6.2); xiangqi -54.6,
+  +17.5 (-18.6); standard -32.8, -46.3 (-39.6). Mean near +3; no
+  forfeits. Not merged; the binary is deleted, `plan33-pieceg40` stays.
+- With queue282 (crazyhouse +23.8, standard -6.8, xiangqi -28.1) the
+  sign splits by variant: the weak ones gain, standard and xiangqi lose.
+  The fixed endgame part is the wrong form for some variants and near
+  right for others; what in the rules parts them is not known. Test:
+  the endgame occupancy model against FSF's piece gain per variant
+  (standard, xiangqi, grand, crazyhouse), where our sliders gain 23% to
+  26%.
 
 ### Grand's chain, built again from the falls
 
