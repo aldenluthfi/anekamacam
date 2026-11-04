@@ -3224,6 +3224,28 @@ round a (FSF's phase from its xiangqi values):
 | the fit test (plan 33) | checks scaled as one move the mean, fit 0.88 | | positions only, no games | games, in the variants where checks decide |
 | DX (plan 29) | danger x10, -64.6 | errors rule at FSF's size | the old static danger, before KD | KD's sum, the check part only, x1.4 |
 
+- checkmean (`plan33-checkmean`, from build 45): `DANGER_CHECK` 49.9%
+  and 80.1% of FSF's full weak ring (822 and 1319 over 1647; 36.4% and
+  54.6% before). Seeded bench: standard 167913 (142862), xiangqi 243474
+  (254503), crazyhouse 402073 (442555), grand 507537 (505020). Smoke 1-3
+  in threecheck, no forfeits.
+- Queue296, after queue295: build 45 and checkmean in crazyhouse,
+  threecheck, koth and grand, with standard and xiangqi as guards, three
+  rounds. Rule set before the games: +2σ on the mean of the six, none
+  below -2σ.
+- Queue296 (cut after ten pairs, `watch.sh`; the eight left needed
+  +40.8 each against a trend of -2.8): checkmean minus build 45,
+  crazyhouse +11.1, +9.5; threecheck +7.1, -17.7; koth -21.4, -33.6;
+  grand -24.3, -45.7; standard +42.1; xiangqi +45.0. No forfeits. Not
+  merged; the binary is deleted, `plan33-checkmean` stays.
+- The sign splits again: standard and xiangqi gain near 2σ each, koth
+  and grand lose. In koth the royal must walk to the goal, and a dearer
+  check holds it back; grand's compound pieces give many checks, so a
+  dearer check fires more where it is not an attack. The weight that
+  helps a royal that stays home costs one that must move, so one number
+  for every variant does not fit; the safe check needs a rule-derived
+  part that reads what the royal must do.
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
