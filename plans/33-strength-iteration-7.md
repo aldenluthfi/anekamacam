@@ -39,7 +39,10 @@ flooded with maps (koth x0.85). seefsf, goalz and the typed or race
 forms of the danger did not merge or stay closed. A pawn of a pawn
 mass counts its defenders and neighbours: build 45, horde +30.4
 (queue294). A repetition from before the root waits for the rule
-count: build 46, a correctness fix, level in play (queue297). At build
+count: build 46, a correctness fix, level in play (queue297). All
+branches but main were deleted, local and remote (user, 2026-11-05):
+where a section says a branch stays as the record, the plan text is now
+the only record of that try. At build
 40, and at every tenth build
 after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
