@@ -3247,6 +3247,60 @@ round a (FSF's phase from its xiangqi values):
   for every variant does not fit; the safe check needs a rule-derived
   part that reads what the royal must do.
 
+### Grand's falls, and a repetition before the root
+
+- The depth probe on 30 grand falls (queues 291, 296, builds 43 and
+  45): mean depth ours 12.1, 15.9, 19.5 at 1, 4 and 16 s; FSF 13.8,
+  21.1, 24.3 at 0.25, 1 and 4 s. In 22 of 30 FSF at 0.25 s scores 150
+  cp or more under our 1 s score; at 16 s we stay over it in 21. Grand
+  joins the evaluation group with threecheck and crazyhouse.
+- Anomaly: in 4 of the 30 our score is flat, 46 to 51 cp from depth 21
+  to 63, where FSF sees -1100 to -2600 or mate. One (grand, black to
+  move, `7k2/10/R5Cpp1/1A1np4p/2p1cp4/8P1/2P3P2P/1P8/3R6/1K8 b`, move
+  60): from the FEN alone we find mate -3 at depth 7; with the game's
+  moves, depth 12 in 62 nodes, +51, h10i10. The game played h10i10
+  g8g9 i10h10 g9g8 just before: h10i10 returns to a position the game
+  had once, and the search scored the second occurrence a draw. The
+  side to move there (FSF) is not bound to repeat; it mates (g8f10).
+- Cause: the search takes one closed cycle as the result whenever no
+  perpetual rule names an offender, wherever the earlier occurrence
+  lies. Stockfish counts a second occurrence only when the earlier one
+  is inside the search (after the root); before the root it waits for
+  the third.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| P5 (plan 17) | the history twofold removed | a verdict below the rule count | none inside the search either | the cycle inside the search stays |
+| the first closed cycle (plan 21) | +48 with contempt | the search missed cycles | any cycle, before the root too | a cycle from before the root waits for the rule |
+
+- reproot (`plan33-reproot`, from build 45): `repetition_distance`
+  gives the plies back to the last occurrence; one cycle closes only
+  when that is less than the ply (inside the search), else the rule's
+  count. The grand position now shows mate -3 at depth 12. Seeded
+  bench: standard 142660 (142862, a return to the root now waits for
+  the rule), xiangqi, crazyhouse and grand the same. Endgame fixtures
+  35 of 38, as build 45 (the same three extinct cases fail on both;
+  see below). Smoke 2-1-1 in grand, no forfeits.
+- Queue297: build 45 and reproot in crazyhouse, threecheck, koth, grand
+  and standard, three rounds. Rule set before the games: +2σ on the
+  mean of the five, none below -2σ.
+- Queue297 (cut after eleven pairs, `watch.sh`; the four left needed
+  +63.1 each against a trend of +2.3): reproot minus build 45,
+  crazyhouse -53.6, +45.5, -26.4; threecheck -25.4, +23.7; koth +14.3,
+  +21.8; grand -16.4, -30.7; standard +18.2, +54.7. No forfeits. Not
+  merged; the binary is deleted, `plan33-reproot` stays. The blunder it
+  removes is real (4 of 30 grand falls), but its rate in play is too
+  small to show against the noise, and grand, where it was found, did
+  not gain.
+- The three failing fixtures (kinglet twice, horde: the last pawn or
+  piece taken, expected a win, got `Ongoing`) failed on build 45 too.
+  Cause: their FENs had two or three fields where castling and en
+  passant need four; since adf3966 the loader rejects such a FEN and
+  the engine plays from the start position. One kinglet case also
+  promoted to a queen, where the kinglet pawn promotes only to a king.
+  With full FENs and `a7a8k` (dd1e000): 38 of 38 on build 45 and on
+  reproot. The extinct rules were right all along.
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
