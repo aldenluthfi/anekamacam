@@ -1019,9 +1019,10 @@ pub fn quiescence_search(
 /// i32                                -> best score in the window
 ///
 /// Notes:
-/// A repetition gets the variant result at the first closed cycle. With a
-/// perpetual rule that blames an offender, the search waits for the rule
-/// count.
+/// A repetition gets the variant result at the first cycle closed inside
+/// the search. A cycle that began before the root waits for the rule
+/// count, as the side to move may still leave it; so does any cycle under
+/// a perpetual rule that blames an offender.
 ///
 /// A stored bound cuts only a scout node, as a wide window must find a
 /// move. The stored move is used at all nodes.
@@ -1068,10 +1069,12 @@ pub fn alpha_beta(
         .as_ref().map(|repetition| repetition.occurrences);
 
     if ply > 0 && let Some(occurrences) = declared {
-        let enough = if state.termination.perpetual.is_some() {                 /* a rule naming an offender fires on */
-            occurrences                                                         /* its own count and not before; one  */
-        } else {                                                                /* closed cycle answers all the rest  */
-            REPETITION_CYCLE
+        let inside = repetition_distance(state, SEARCH_REPETITION_CAP)
+            .is_some_and(|distance| distance < ply);
+        let enough = if state.termination.perpetual.is_some() || !inside {      /* a cycle that began before the root */
+            occurrences                                                         /* or a rule naming an offender waits */
+        } else {                                                                /* for the rule's count; one closed   */
+            REPETITION_CYCLE                                                    /* cycle inside it answers the rest   */
         };
 
         if repeats >= enough {

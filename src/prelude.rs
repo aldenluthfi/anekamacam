@@ -59,7 +59,8 @@ pub use crate::game::moves::move_list::{
 };
 pub use crate::game::representations::termination::{
     adjudicate_outcome, count_repetitions, counting_limit, counting_progress,
-    game_outcome, position_terminal, repetition_outcome, side_is_bare,
+    game_outcome, position_terminal, repetition_distance, repetition_outcome,
+    side_is_bare,
 };
 pub use crate::game::moves::move_parse::{
     generate_move_set, generate_move_vectors, strip_move_conditions,

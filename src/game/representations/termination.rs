@@ -932,6 +932,39 @@ pub fn count_repetitions(state: &State, cap: usize) -> u8 {
     (matches + 1).min(u8::MAX as usize) as u8
 }
 
+/// repetition_distance
+///
+/// Gives the plies back to the last earlier occurrence of the current
+/// position, within `repetition_scan_bound`. Without a `repetition` rule
+/// or an earlier occurrence, it gives `None`.
+///
+/// Params:
+/// - state: &State -> current position
+/// - cap  : usize  -> scan limit, `usize::MAX` for the real game
+///
+/// Return:
+/// Option<usize>   -> plies back to the last occurrence, if any
+///
+/// Notes:
+/// The scan stops at the last null move, as in `count_repetitions`.
+///
+pub fn repetition_distance(state: &State, cap: usize) -> Option<usize> {
+    if state.termination.repetition.is_none() {
+        return None;
+    }
+
+    let bound = repetition_scan_bound(state, cap);
+    let start = state.history.len() - bound;
+    let null = null_move();
+
+    state.history[start..]
+        .iter()
+        .rev()
+        .take_while(|snapshot| snapshot.move_ply != null)
+        .position(|snapshot| snapshot.position_hash == state.position_hash)
+        .map(|index| index + 1)
+}
+
 /// repetition_outcome
 ///
 /// Calculates the repetition or perpetual result. It gives `None` without
