@@ -249,11 +249,12 @@ fn precedence(op: char) -> usize {
 ///
 /// Converts a Betza atom into the same move in Cheesy King Notation (CKN).
 /// Thus all later stages see only king steps. Betza names the target
-/// square. CKN names the route. A route digit selects a heading on the
-/// cardinal circle, clockwise from the current direction. The first atom
-/// points north, so 1 is north, odd digits are orthogonal and even digits
-/// are diagonal. After a diagonal step, the circle turns, so `N` is a
-/// knight, not a double ferz:
+/// square. CKN names the route.
+///
+/// A route digit selects a heading on the cardinal circle, clockwise from
+/// the current direction. The first atom points north, so 1 is north, odd
+/// digits are orthogonal and even digits are diagonal. After a diagonal
+/// step, the circle turns, so `N` is a knight, not a double ferz:
 ///
 /// ```text
 /// ┌───┬──────────────────────┬───────────────────────────────────┐
@@ -707,8 +708,9 @@ where
 /// ```
 ///
 /// `normalize` reads the full expression. Each later stage reads one branch
-/// and can give many. The branches join with `|` before the next stage. The
-/// vector compilers read the result: `atomic_to_vector`,
+/// and can give many. The branches join with `|` before the next stage.
+///
+/// The vector compilers read the result: `atomic_to_vector`,
 /// `chained_atomic_to_vector`, `compound_atomic_to_vector` and
 /// `leg_to_vector`.
 ///
@@ -1541,10 +1543,11 @@ fn evaluate_atomic_subexpression(
 /// evaluate_atomic_expression
 ///
 /// Walks a token group from left to right with one branch set. The set
-/// starts as one empty branch with the heading `rotation`. A cardinal or
-/// index filter waits and goes to the next atom or group. A colon range
-/// after that atom gets it first, so each atom is read with the token
-/// after it.
+/// starts as one empty branch with the heading `rotation`.
+///
+/// A cardinal or index filter waits and goes to the next atom or group. A
+/// colon range after that atom gets it first, so each atom is read with the
+/// token after it.
 ///
 /// Params:
 /// - expr    : AtomicGroup -> the token group to evaluate
@@ -2535,10 +2538,11 @@ fn process_multi_leg_modifiers(
 /// evaluate_multi_leg_term_leg
 ///
 /// Adds one leg to each branch. The leg and its filters use the heading of
-/// the branch. The last step of the new leg is its full displacement, so
-/// the next leg takes its heading from the leg end, not from its small last
-/// step. A slash group keeps the last step, see
-/// [`evaluate_multi_leg_subexpression`].
+/// the branch.
+///
+/// The last step of the new leg is its full displacement, so the next leg
+/// takes its heading from the leg end, not from its small last step. A
+/// slash group keeps the last step, see [`evaluate_multi_leg_subexpression`].
 ///
 /// Params:
 /// - result   : Vec<MultiLegVector> -> branches until now

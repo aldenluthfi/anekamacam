@@ -990,8 +990,9 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
 ///
 /// Each function draws one region of the frame from the current `Tui`. They
 /// read the snapshots, not the positions, and write at most a scroll
-/// offset. `render` makes the layout and calls the other functions. Each
-/// screen has `draw_tabs` at the top, `draw_input` at the bottom with
+/// offset. `render` makes the layout and calls the other functions.
+///
+/// Each screen has `draw_tabs` at the top, `draw_input` at the bottom with
 /// `draw_help_bar`, and `draw_help_popup` on `?`.
 ///
 /// ```text

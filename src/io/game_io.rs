@@ -1638,7 +1638,7 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = arguments.get(1)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Draw);
-                    
+
                     termination.repetition = Some(Repetition {
                         occurrences, outcome, name, clock: 0,
                     });
@@ -1649,7 +1649,7 @@ pub fn parse_config_file(path: &str) -> State {
                             panic!("Invalid counter limit: {}", arguments[0])
                         });
                     let mut reset_pieces = vec![false; set_piece_count];
-                    
+
                     if arguments[1] != "-" {
                         for piece_char in arguments[1].chars() {
                             let piece_index = char_to_index
@@ -1664,11 +1664,11 @@ pub fn parse_config_file(path: &str) -> State {
                             reset_pieces[piece_index] = true;
                         }
                     }
-                    
+
                     let outcome = arguments.get(2)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Draw);
-                    
+
                     termination.counter = Some(Counter {
                         clock: 0,
                         limit, reset_pieces, outcome, name,

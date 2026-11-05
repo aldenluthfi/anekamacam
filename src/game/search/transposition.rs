@@ -993,7 +993,7 @@ macro_rules! probe_qt_entry {
             $key,
             (false, i32::MIN, null_pseudo_move()),
             |move_slot, data_slot| {
-                let encoded = (data_slot & 0xFFFF_FFFF) as u32;                 /* bits  0–31 = score+flags           */
+                let encoded = (data_slot & 0xFFFF_FFFF) as u32;                 /* bits  0-31 = score+flags           */
                 let signature = (data_slot >> 32) as u64;                       /* bits 32-95 = MoveSignature         */
                 let pseudo_move: PseudoMove = (move_slot, signature);
 

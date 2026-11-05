@@ -880,8 +880,8 @@ pub struct Scratch {
 /// The work lists of one node: its moves, their ordering scores and the
 /// multi-capture records. A node keeps them until it returns, while its
 /// children fill their own. Thus [`Scratch`] has one set for each ply.
-/// `later` holds the drops of an `alpha_beta` node while they join
-/// `moves`.
+///
+/// `later` holds the drops of an `alpha_beta` node while they join `moves`.
 ///
 /// Notes:
 /// The depth guards of `alpha_beta` and `quiescence_search` return first,

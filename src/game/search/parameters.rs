@@ -434,14 +434,14 @@ const THREAT_LAZY_RATIO: u32 = 100;
 /// Mobility
 ///
 /// The value of the squares a piece attacks, read from the same attack
-/// maps. A piece that is not a pawn and not royal with `m` squares in its
-/// area is worth `value * (m - 2) / (8 + m)`, from a table by `m`. The
-/// value is Fairy-Stockfish's for its fairy pieces, over its queen, opening
-/// then endgame (`MOBILITY_RATIO`: 5.9% and 7.5% of the most valuable
-/// piece).
+/// maps. A piece that is not a pawn and not royal, with `m` squares in its
+/// area, is worth `value * (m - 2) / (8 + m)`, from a table by `m`.
 ///
-/// The value doubles when a captured piece goes to the hand, or when a
-/// count of checks wins, as in Fairy-Stockfish.
+/// - `MOBILITY_RATIO` : 5.9% and 7.5% of the most valuable piece
+///
+/// The value is Fairy-Stockfish's for its fairy pieces over its queen,
+/// opening then endgame. It doubles when a captured piece goes to the
+/// hand, or when a count of checks wins, as in Fairy-Stockfish.
 ///
 const MOBILITY_RATIO: [u32; 2] = [59, 75];
 
@@ -449,9 +449,11 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 ///
 /// The sum of the enemy attack on a royal, read from the same attack maps,
 /// in parts of a full weak ring over `COEFFICIENT_SCALE`. The ring is the
-/// royal square and its local ring (`ring_squares`); full, it has
-/// `local_stride + 1` squares. The parts are Fairy-Stockfish's over its own
-/// full weak ring (nine squares at 183):
+/// royal square and its local ring (`ring_squares`), `local_stride + 1`
+/// squares when full.
+///
+/// The parts are Fairy-Stockfish's over its own full weak ring (nine
+/// squares at 183):
 ///
 /// - `DANGER_WEAK_RING`    : 100%, shared by the weak ring squares
 /// - `DANGER_HIT_RATIO`    : 37.7% of a weak square, each enemy ring hit
@@ -463,14 +465,16 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 /// - `DANGER_THRESHOLD`    : 6.1%, the sum costs nothing up to it
 /// - `DANGER_CAP`          : 212.5%, the opening cost is linear past it
 ///
-/// A weak ring square is one the enemy attacks and we do not hold twice. A
-/// ring hit lands on a ring square next to the royal. An unsafe check is a
-/// check square an enemy type reaches when none of its squares is safe; in
-/// a race of checks, where each counts twice, the dearest type gives none,
-/// as a check there gives the checker away. A safe check counts once for
-/// each enemy type. A major of the cut is a big
-/// piece worth more than the geometric mean of the cheapest and the dearest
-/// big pieces.
+/// The terms of the sum:
+///
+/// - weak ring square : the enemy attacks it and we do not hold it twice
+/// - ring hit         : an attack on a ring square next to the royal
+/// - safe check       : counts once for each enemy type
+/// - unsafe check     : a check square of a type that has no safe one
+/// - major of the cut : a big piece above the geometric mean of the big ones
+///
+/// In a race of checks the dearest type gives no unsafe check, as a check
+/// there gives the checker away.
 ///
 /// A sum `d` past the threshold costs `min(d, cap) * d` in the opening and
 /// `d` in the endgame, scaled so that a full weak ring costs
@@ -478,10 +482,13 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 ///
 /// Fairy-Stockfish weighs the parts by the rules. With drops, a weak square
 /// counts twice, a hit 1.5 times, and there is no cut for a missing major.
-/// In a race of checks, a weak square and an unsafe check count twice, a
-/// hit five times, the cut halves, the safe checks rise by `7 / (3 + l)`
-/// with `l` checks left to the enemy, a check is always safe with one left,
-/// and the endgame cost gains `2 / (2 + l)` of the opening cost.
+/// In a race of checks, with `l` checks left to the enemy:
+///
+/// - weak squares : twice, and unsafe checks too
+/// - hits         : five times
+/// - no major cut : half
+/// - safe checks  : `1 + 7 / (3 + l)` times; at `l = 1` each check is safe
+/// - endgame cost : plus `2 / (2 + l)` of the opening cost
 ///
 const DANGER_WEAK_RING: u32 = 1000;
 const DANGER_HIT_RATIO: u32 = 377;
@@ -516,13 +523,15 @@ const PAWN_MIN_START_COUNT: usize = 5;
 /// - `PAWN_BACKWARD_RATIO`          : -17.5%, the same in the two phases
 ///
 /// A colour with more pawns than `1 / PAWN_MASS_DIVISOR` of the board has
-/// a pawn mass: it wins by pushing its pawns together, so each one that is
-/// not passed gains the progress part, from the same squared progress as
-/// the passed pawn, once for each own pawn that defends it or stands
-/// beside it, as Fairy-Stockfish's `HordeConnected` counts them. One step
-/// from promotion on eight ranks, it is about one pawn more for each. An
-/// opposed pawn gets 40.4%, Fairy-Stockfish's opposed row over its
-/// unopposed one on the last three ranks (95 over 235).
+/// a pawn mass, which wins by pushing its pawns together. A mass pawn that
+/// is not passed gains the progress part for each own pawn that defends it
+/// or stands beside it, as Fairy-Stockfish's `HordeConnected` counts them.
+///
+/// Notes:
+/// The progress part uses the squared progress of the passed pawn: one
+/// step from promotion on eight ranks, it is about one pawn. An opposed
+/// pawn keeps 40.4%, Fairy-Stockfish's opposed row over its unopposed one
+/// on the last three ranks (95 over 235).
 ///
 const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
 const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
@@ -545,11 +554,17 @@ const PAWN_BACKWARD_RATIO: u32 = 175;
 /// - `PASSED_ROYAL_RATIO`      : 3.3% and -1.4% a step, enemy and own royal
 /// - `PASSED_UNPROMOTED_RATIO` : 40% of the pawn value, if it cannot promote
 ///
-/// The path tiers are 25%, 20.8%, 11.8%, 4.9% and 0: no unsafe square in
-/// the span, each one held by our pawns, none on the path, none on a stop
-/// square, else. A square is unsafe when the enemy attacks or holds it. A
-/// stop square we attack adds 3.5%. The royal part is in the endgame only,
-/// and each distance counts at most one step more than the unit has.
+/// The path tiers, times the unit:
+///
+/// - 25%   : no unsafe square in the span
+/// - 20.8% : each unsafe square held by our pawns
+/// - 11.8% : no unsafe square on the path
+/// - 4.9%  : no unsafe square on a stop square
+/// - 0     : else
+///
+/// A square is unsafe when the enemy attacks or holds it. A stop square we
+/// attack adds 3.5%. The royal part is in the endgame only, and each
+/// distance counts at most one step more than the unit has.
 ///
 /// Fairy-Stockfish's passed pawn values over its gain, a queen less a pawn.
 /// Its unit is `5 r - 13` for the relative rank `r`, a share of 17 here.
@@ -785,9 +800,10 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 ///
 /// Notes:
 /// An origin with no move is not in the mean. The negated offsets stop a
-/// pawn from reaching only the squares in front of it. The function
-/// collects the one-step targets of each square once, before the fills.
-/// Each origin still has its own fill, because a step does not always
+/// pawn from reaching only the squares in front of it.
+///
+/// The function collects the one-step targets of each square once, before
+/// the fills. Each origin still has its own fill, as a step does not always
 /// have a step back.
 ///
 fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
@@ -1236,9 +1252,10 @@ fn derive_condition_chance(
 ///
 /// Keeps the vectors that are usual moves: the vectors whose condition
 /// matches with at least `USUAL_CONDITION_CHANCE` at the opening
-/// occupancy. A vector without a condition is always usual. The geometry
-/// of a piece reads only these vectors. Thus an Annan pawn with a rook
-/// move, when a rook stands behind it, stays a pawn.
+/// occupancy. A vector without a condition is always usual.
+///
+/// The geometry of a piece reads only these vectors. Thus an Annan pawn
+/// with a rook move, when a rook stands behind it, stays a pawn.
 ///
 /// Params:
 /// - state  : &State        -> start census of the pieces
@@ -1337,10 +1354,11 @@ fn derive_promotion_field(state: &State, piece_index: PieceIndex) -> Vec<f64> {
 /// derive_promotion_target
 ///
 /// Gives the value that a promotion of one piece can bring, for one phase.
-/// Normally it is the most valuable of the types the piece can promote to.
+/// It is the most valuable of the types the piece can promote to.
+///
 /// When a piece can promote only to a type that was captured, the pool is
-/// empty at the start and fills with the pieces that were traded, so only
-/// the cheapest target is sure.
+/// empty at the start and fills with the traded pieces, so only the
+/// cheapest target is sure.
 ///
 /// Params:
 /// - state      : &State     -> variant with the piece values and rules
@@ -1421,7 +1439,7 @@ fn derive_promotion_bonus(
 ) -> f64 {
     let piece = &state.statics.pieces[piece_index as usize];
 
-    if !p_can_promote!(piece) || span <= 0.0 {                             /* no zone, or one that is everywhere */
+    if !p_can_promote!(piece) || span <= 0.0 {                                  /* no zone, or one that is everywhere */
         return 0.0;
     }
 
@@ -1521,10 +1539,10 @@ fn derive_pst(
         .map(|score| (score - mean).abs())
         .fold(0.0_f64, f64::max)
         .max(1.0);
-    let amplitude = (piece_value * PST_AMPLITUDE_RATIO as f64                  /* a dearer piece earns a wider band, */
-        / COEFFICIENT_SCALE).max(PST_AMPLITUDE_FLOOR);                         /* never a narrower one than before   */
+    let amplitude = (piece_value * PST_AMPLITUDE_RATIO as f64                   /* a dearer piece earns a wider band, */
+        / COEFFICIENT_SCALE).max(PST_AMPLITUDE_FLOOR);                          /* never one narrower than the floor  */
 
-    let promotion_field = derive_promotion_field(state, index);                /* read the zone once, not per square */
+    let promotion_field = derive_promotion_field(state, index);                 /* read the zone once, not per square */
     let promotion_span = derive_promotion_span(&promotion_field);
 
     (0..board_size).map(|square| {
@@ -2771,8 +2789,9 @@ pub fn derive_shelter_parameters(state: &mut State) {
 /// Makes the zone attack tables of `king_danger!` and the costs of
 /// `king_danger!` and `open_shield!`. For each piece, origin square and
 /// royal square, the table has the expected number of moves of that piece
-/// onto the royal square or its ring. It uses the opening occupancy. Thus
-/// the evaluation only adds bytes for the enemy pieces.
+/// onto the royal square or its ring, at the opening occupancy.
+///
+/// Thus the evaluation only adds bytes for the enemy pieces.
 ///
 /// - landing square : gets the chance of the vector to arrive there
 /// - ring squares   : each gets the same chance again
@@ -2990,10 +3009,12 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
 ///
 /// The step test rejects the shogi knight and lance. The backward test
 /// rejects the gold, silver, advisor and elephant. The count rejects a
-/// single forward stepper. The first move can be longer, so the FIDE pawn
-/// keeps its double step. A pawn that never steps back cannot come back
-/// to a start square, so a long move from one is a first move too, as the
-/// horde pawn's double step from its first two ranks.
+/// single forward stepper.
+///
+/// The first move can be longer, so the FIDE pawn keeps its double step.
+/// A pawn that never steps back cannot come back to a start square, so a
+/// long move from one is a first move too, as the horde pawn's double step
+/// from its first two ranks.
 ///
 /// Params:
 /// - state: &State          -> variant with the pieces to test
@@ -3439,10 +3460,11 @@ fn derive_pawn_advancement(
 ///
 /// Notes:
 /// The base of a passed pawn is small. The unit prices its path and the
-/// royals near it in `attack_terms_on!`, where the attack maps are. A pawn
-/// that cannot promote uses its own value, times its squared progress, and
-/// has no unit. Only the connected term has an endgame value. A fault is
-/// not less bad in the endgame.
+/// royals near it in `attack_terms_on!`, where the attack maps are.
+///
+/// A pawn that cannot promote uses its own value, times its squared
+/// progress, and has no unit. Only the connected term has its own endgame
+/// value; a fault costs the same in the two phases.
 ///
 #[hotpath::measure]
 pub fn derive_pawn_parameters(state: &mut State) {
@@ -3484,7 +3506,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
         support_files[slot] = derive_pawn_support_files(state, index);
 
-        let promotion_field =                                                  /* read the zone once, not per square */
+        let promotion_field =                                                   /* read the zone once, not per square */
             derive_promotion_field(state, index as PieceIndex);
         let promotion_span = derive_promotion_span(&promotion_field);
 
@@ -3627,8 +3649,10 @@ pub fn derive_pawn_parameters(state: &mut State) {
 /// Mobility counts twice when the captures fill the hand or with a count
 /// of checks. The weak square of the danger sum comes from the ring size,
 /// and the rule weights change for a hand the captures fill and for a race
-/// of checks. The cost is a part of the most valuable piece where a royal
-/// can be mated; else it is 0 and the sum is off.
+/// of checks.
+///
+/// The cost is a part of the most valuable piece where a royal can be
+/// mated; else it is 0 and the sum is off.
 ///
 /// Royals are not tested for a pair. The list has the two colours of each
 /// pair piece, so the evaluation needs no swap map.

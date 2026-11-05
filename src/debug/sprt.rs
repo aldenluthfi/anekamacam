@@ -273,7 +273,7 @@ impl Display for SPRTTimeControl {
 /// loses one game, not the full run.
 ///
 struct SPRTChild {
-    engine: SPRTEngine,                                                        /* binary and options, for restarts   */
+    engine: SPRTEngine,                                                         /* binary and options, for restarts   */
     sandbox: PathBuf,                                                           /* private work folder, for restarts  */
     process: Child,                                                             /* the running engine subprocess      */
     input: ChildStdin,                                                          /* pipe carrying commands to it       */

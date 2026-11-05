@@ -4,9 +4,10 @@
 //!
 //! UCI, USI and UCCI differ only in the handshake word, some `go` clauses
 //! and the dictionary notation. The position, variant list, hash tables,
-//! search threads and ponder logic are the same. This file has the shared
-//! `Session` and the `execute_common` dispatcher. Each protocol handles
-//! only the lines that are different.
+//! search threads and ponder logic are the same.
+//!
+//! This file has the shared `Session` and the `execute_common` dispatcher.
+//! Each protocol handles only the lines that are different.
 //!
 //! Created: 19/07/2026
 //! Author : Alden Luthfi
@@ -838,6 +839,20 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
     });
 }
 
+/// abort_search
+///
+/// Stops the active search of the session, if one runs, and waits for its
+/// thread. The interrupt flag is set for the join and cleared after it.
+///
+/// Params:
+/// - session: &mut Session      -> session with the active search
+///
+/// Return:
+/// Option<(SearchResult, bool)> -> the result, and true for a ponder search
+///
+/// Notes:
+/// A thread that panicked gives `None`, so the session goes on.
+///
 fn abort_search(session: &mut Session) -> Option<(SearchResult, bool)> {
     let sh = session.active.take()?;
 
@@ -854,6 +869,14 @@ fn abort_search(session: &mut Session) -> Option<(SearchResult, bool)> {
     }
 }
 
+/// stop_search
+///
+/// Stops the active search for `stop`. A ponder search kept its best move
+/// back, so this function prints it.
+///
+/// Params:
+/// - session: &mut Session -> session with the active search
+///
 fn stop_search(session: &mut Session) {
     if let Some((result, was_ponder)) = abort_search(session)
         && was_ponder
@@ -866,6 +889,18 @@ fn stop_search(session: &mut Session) {
     }
 }
 
+/// handle_ponderhit
+///
+/// Turns a ponder search into a normal one on `ponderhit`. It stops the
+/// ponder thread and starts a search with the kept depth and node limits.
+/// The deadline is the kept budget from the hit, or none without a budget.
+///
+/// Params:
+/// - session: &mut Session -> session with the ponder search
+///
+/// Notes:
+/// Without an active ponder search, the line does nothing.
+///
 fn handle_ponderhit(session: &mut Session) {
     if !session.active.as_ref().is_some_and(|sh| sh.is_ponder) {
         return;
@@ -896,6 +931,15 @@ fn handle_ponderhit(session: &mut Session) {
     });
 }
 
+/// handle_setoption
+///
+/// Reads `setoption name <name> [value <value>]` and applies the option to
+/// the session. The name is each word between `name` and `value`.
+///
+/// Params:
+/// - session: &mut Session -> session that gets the option
+/// - tokens : &[&str]      -> words of the command line
+///
 fn handle_setoption(session: &mut Session, tokens: &[&str]) {
     let Some(name_pos) = tokens.iter().position(|&t| t == "name") else {
         return;

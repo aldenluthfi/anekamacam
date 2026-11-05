@@ -5,8 +5,9 @@
 //! This is the runtime part of move generation. The parse modules compile
 //! the move expressions into vectors once. This file walks those vectors on
 //! the current board to make `Move`s, test attacks, and make and undo
-//! moves with all incremental updates. All of it is on the search hot
-//! path, so the leg loops are macros.
+//! moves with all incremental updates.
+//!
+//! All of it is on the search hot path, so the leg loops are macros.
 //!
 //! Created: 01/02/2026
 //! Author : Alden Luthfi
@@ -739,11 +740,16 @@ pub type AttackRecipes = (
 /// A vector with a move condition, a first-move leg or a royal-only last
 /// leg is left out, and the other target rules (rank, unmoved) are not
 /// tested: the attack maps serve the evaluation, and move generation keeps
-/// the full rules. So a map holds more targets than the captures, never
-/// fewer, unless a left-out vector can capture, a vector takes a piece on
-/// the way that no unload puts back (a lion's double capture), or its last
-/// leg can take an own piece; such a piece is not whole. A take that an
-/// unload puts back is a screen, as the cannon's.
+/// the full rules.
+///
+/// So a map holds more targets than the captures, never fewer, except for
+/// a piece that is not whole:
+///
+/// - a left-out vector can capture
+/// - a vector takes a piece on the way that no unload puts back (a lion)
+/// - its last leg can take an own piece
+///
+/// A take that an unload puts back is a screen, as the cannon's.
 ///
 pub fn derive_attack_recipes(state: &State) -> AttackRecipes {
     let files = state.statics.files as i32;
@@ -951,10 +957,12 @@ macro_rules! first_blocker {
 /// piece_attacks!
 ///
 /// Adds the squares that one piece attacks from one square to a board,
-/// with the given occupancy: its leap board, each line ray up to and with
-/// its first blocker, each hop target (the first blocker past the first
-/// blocker), and each gate target whose squares on the way hold as
-/// needed.
+/// with the given occupancy:
+///
+/// - leaps : its leap board
+/// - lines : each ray up to and with its first blocker
+/// - hops  : the first blocker past the first blocker
+/// - gates : each target whose squares on the way hold as needed
 ///
 /// Params:
 /// - state      : &State     -> variant with the attack tables
@@ -1103,10 +1111,11 @@ macro_rules! piece_attacks {
 /// validate_attack_vector!
 ///
 /// Tells if an attack vector can legally reach a target square. It tests
-/// the CPMN condition of the vector first. Then it simulates each leg:
-/// move, capture, destroy and unload rules, occupancy, rank, royal and
-/// unmoved filters, and the special modifier pairs. It tests the attack
-/// candidates of `relevant_attacks`.
+/// the attack candidates of `relevant_attacks`.
+///
+/// It tests the CPMN condition of the vector first. Then it simulates each
+/// leg: move, capture, destroy and unload rules, occupancy, rank, royal and
+/// unmoved filters, and the special modifier pairs.
 ///
 /// Params:
 /// - multi_leg_vector: &MoveVector -> attack vector to simulate
@@ -1373,9 +1382,10 @@ macro_rules! validate_attack_vector {
 /// The core of move construction. It simulates one vector leg by leg on
 /// the current board. If all legs are legal, it adds the encoded moves:
 /// captures, multi-captures, unloads, en passant, castling right changes
-/// and one move for each legal promotion. A failed CPMN condition, a
-/// blocked leg, a failed capture rule or a first move rule stops it without
-/// a move.
+/// and one move for each legal promotion.
+///
+/// A failed CPMN condition, a blocked leg, a failed capture rule or a first
+/// move rule stops it without a move.
 ///
 /// Each leg starts at the end of the last leg. `S` is the origin, `1` and
 /// `2` are leg ends, and `T` is the target. The macro tests occupancy and
@@ -4475,8 +4485,9 @@ pub fn generate_drops(state: &State, out: &mut Vec<Move>) {
 /// A piece whose capture reach holds no enemy piece can capture nothing,
 /// so it is skipped before its vectors are walked. A whole piece, whose
 /// attack map holds all its captures, is then skipped when its map on the
-/// board holds no enemy piece: a line piece blocked by its own side. Both
-/// skips are off when a victim can be off the enemy squares they read:
+/// board holds no enemy piece: a line piece blocked by its own side.
+///
+/// Both skips are off when a victim can be off the enemy squares they read:
 ///
 /// - own capture : a destroy leg takes an own piece, a legal capture too
 /// - en passant  : the victim is not on a leg square

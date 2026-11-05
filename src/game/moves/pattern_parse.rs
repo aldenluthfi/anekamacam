@@ -43,9 +43,11 @@ lazy_static! {
 ///
 /// Each half has a `-` separated list of offsets and a `-` separated list
 /// of piece groups. The lists pair by position. The offsets use the move
-/// notation. For example, `nW{2}~Kk@nW{..1}~*` means: a king is two steps
-/// up, and the square between is empty. Each half can be empty, thus
-/// `@sW~G` has only a stopper.
+/// notation.
+///
+/// For example, `nW{2}~Kk@nW{..1}~*` means: a king is two steps up, and the
+/// square between is empty. Each half can be empty, thus `@sW~G` has only a
+/// stopper.
 ///
 /// - `*` : all pieces of the variant, expanded before the parse
 /// - `?` : an empty square

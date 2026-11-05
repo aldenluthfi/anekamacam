@@ -505,15 +505,19 @@ macro_rules! check_race {
 ///     race worth for that colour, 0 or more
 ///
 /// Notes:
-/// A goal piece on the zone has won, so it is not scored here. The flood
-/// keeps one square set for each move count still to come, as one bit
-/// for each square, and stops when it has reached each zone square or
+/// A goal piece on the zone has won, so it is not scored here.
+///
+/// The flood keeps one square set for each move count still to come, one
+/// bit for each square, and stops when it has reached each zone square or
 /// nothing is left. Each step joins the landing maps of its squares and
-/// sorts the new squares by their holds, a word at a time. The holds are
-/// Fairy-Stockfish's flag race: a piece must wait for each attack on its
-/// way to go, 1 move when attacked once, 2 when twice or by a pawn, and a
-/// pawn of its own must move first. An enemy pawn blocks an own pawn when
-/// it stands on the path next to it.
+/// sorts the new squares by their holds, a word at a time.
+///
+/// The holds are Fairy-Stockfish's flag race, the moves a piece waits:
+///
+/// - attacked once      : 1
+/// - twice or by a pawn : 2
+/// - an own pawn        : 2, the pawn must move first
+/// - a blocked own pawn : no way on, an enemy pawn on the path next to it
 ///
 #[macro_export]
 macro_rules! goal_race {
@@ -875,8 +879,9 @@ macro_rules! castling_bonus {
 ///
 /// Notes:
 /// The macro reads one pawn list from the piece lists, so the cost is the
-/// square of the pawn count. A variant without pawns returns at once. The
-/// pawn cache in [`Scratch`] keeps results under the pawn key, and most
+/// square of the pawn count. A variant without pawns returns at once.
+///
+/// The pawn cache in [`Scratch`] keeps results under the pawn key, and most
 /// moves do not move a pawn. The macro borrows `scratch` and `statics` as
 /// separate fields.
 ///
@@ -1064,9 +1069,10 @@ macro_rules! pawn_structure {
 /// Gives the threat and mobility value, White minus Black, for the opening
 /// and the endgame. One pass makes the attack map of each piece and keeps
 /// for each colour the squares it attacks once and twice, the squares its
-/// pawns attack, and its pawn and royal squares. The pass maps the pawns
-/// and the royals first, so the mobility area of each other piece is known
-/// when its map is made:
+/// pawns attack, and its pawn and royal squares.
+///
+/// The pass maps the pawns and the royals first, so the mobility area of
+/// each other piece is known when its map is made:
 ///
 /// - area     : no own pawn, no own royal, no square an enemy pawn attacks
 /// - mobility : `m`, the squares of the area that the piece attacks
@@ -1109,8 +1115,9 @@ macro_rules! pawn_structure {
 /// - no major  : the enemy has no major of the cut, less danger
 ///
 /// A ring attacker is an enemy piece whose map meets the ring. A safe check
-/// square is one we do not attack, or a weak one the enemy holds twice. A
-/// type with no safe check square makes each check square it reaches
+/// square is one we do not attack, or a weak one the enemy holds twice.
+///
+/// A type with no safe check square makes each check square it reaches
 /// unsafe, but in a race of checks the dearest type, whose check there
 /// would lose it, makes none.
 ///
@@ -1133,14 +1140,18 @@ macro_rules! pawn_structure {
 /// Notes:
 /// The maps are those of `piece_attacks!`: a move condition is not tested,
 /// so a map can hold more targets than the captures. A pawn is a piece
-/// with a pawn slot. A piece in the hand attacks nothing. The pass keeps
-/// the square and the map of each pawn for the pawn kind, as a safe square
-/// is known only after the pass, and the union of the maps of each piece
-/// type for the checks. The check squares are the map of the type of the
-/// other colour cast from the royal, exact for leaps, lines and hops. A
-/// pawn checks only from the hand, and a held piece drops on any empty
-/// square. The mobility formula, the danger sum and the passed pawn parts
-/// are Fairy-Stockfish's for its fairy pieces.
+/// with a pawn slot. A piece in the hand attacks nothing.
+///
+/// The pass keeps the square and the map of each pawn for the pawn kind,
+/// as a safe square is known only after the pass, and the union of the
+/// maps of each piece type for the checks.
+///
+/// The check squares are the map of the type of the other colour cast from
+/// the royal, exact for leaps, lines and hops. A pawn checks only from the
+/// hand, and a held piece drops on any empty square.
+///
+/// The mobility formula, the danger sum and the passed pawn parts are
+/// Fairy-Stockfish's for its fairy pieces.
 ///
 #[macro_export]
 macro_rules! attack_terms_on {
@@ -1589,9 +1600,10 @@ pub fn attack_terms(state: &mut State) -> (i32, i32) {
 ///
 /// Gives the opening score, White minus Black. It is the material and
 /// piece-square totals plus the royal safety terms that keep a royal at
-/// home: shelter, guard, castling and open files. The opening, the setup
-/// and the middlegame blend use it, each with [`shared_score!`] added.
-/// The endgame does not.
+/// home: shelter, guard, castling and open files.
+///
+/// The opening, the setup and the middlegame blend use it, each with
+/// [`shared_score!`] added. The endgame does not.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -1624,10 +1636,11 @@ macro_rules! opening_score {
 ///
 /// Gives the terms that the opening and the endgame score share, White
 /// minus Black: the enemy pressure and nearness to the royals, the check
-/// race and the extinction threats. They do not depend on the phase, so
-/// the evaluation calculates them once and adds the same value to the two
-/// halves before the blend. The goal race needs the attack maps, so it is
-/// in [`attack_terms_on!`].
+/// race and the extinction threats.
+///
+/// They do not depend on the phase, so the evaluation calculates them once
+/// and adds the same value to the two halves before the blend. The goal
+/// race needs the attack maps, so it is in [`attack_terms_on!`].
 ///
 /// Params:
 /// - state: &State -> position to evaluate

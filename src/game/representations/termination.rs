@@ -81,10 +81,10 @@ pub struct Counting {
 /// Extinct
 ///
 /// A material extinction rule. When the count of `set` pieces of a colour
-/// is `threshold` or less, that colour gets `outcome`. Derivation sets
-/// `lone`, the piece of a colour that stands in for the royal in the
-/// evaluation, and `threat`, the cost of an attacked set piece when one
-/// copy is left above the threshold.
+/// is `threshold` or less, that colour gets `outcome`. Derivation sets:
+///
+/// - lone   : the piece of a colour that stands in for the royal
+/// - threat : the cost of an attacked set piece, one copy over the threshold
 ///
 /// Subject: the colour with no pieces left. It is not always the side that
 /// moved. A capture removes enemy pieces, and a promotion can remove own
@@ -103,10 +103,11 @@ pub struct Extinct {
 /// Goal
 ///
 /// A goal zone rule. When a colour moves a `set` piece to a `zone` square,
-/// that colour gets `outcome`. The two colours share the zone. Derivation
-/// sets `landings` and `value` for the goal race of the evaluation. The
-/// table has one map of squares for each piece and square, a word count
-/// long, and only the `set` pieces fill their maps.
+/// that colour gets `outcome`. The two colours share the zone.
+///
+/// Derivation sets `landings` and `value` for the goal race of the
+/// evaluation. The table has one map of squares for each piece and square,
+/// a word count long, and only the `set` pieces fill their maps.
 ///
 /// Subject: the colour with the piece in the zone.
 ///

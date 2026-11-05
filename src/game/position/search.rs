@@ -13,6 +13,7 @@
 //! Two hash tables keep earlier results, one for the tree and one for the
 //! leaves. Each ply takes one static evaluation. Null moves, move counts and
 //! the exchange simulation prune moves, and the history tables order them.
+//!
 //! [`SearchInfo`] has the limits, counters and ordering tables of one
 //! worker. Lazy SMP workers share only the hash tables.
 //!
@@ -321,6 +322,7 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 ///
 /// Resets the node counters, the killers and the PV storage of the worker.
 /// A move key is `pieces * squares` wide, so the variant sets the sizes.
+///
 /// The learned tables are new only when their size does not fit the
 /// variant: the session keeps a worker between the moves of a game, and
 /// its histories go on learning.
@@ -1031,11 +1033,12 @@ pub fn quiescence_search(
 ///
 /// A move that gives check gets one more ply while the line is shorter
 /// than two times the iteration depth. It is never reduced and only
-/// futility skips it, unless the mover holds a piece in hand: then any
-/// empty square near a royal can take a checking drop, a check is common,
-/// and the move count, the exchange and LMR treat it as any move. A
-/// futility skip is made and tested for check only if its piece can reach
-/// an enemy royal.
+/// futility skips it.
+///
+/// When the mover holds a piece in hand, any empty square near a royal can
+/// take a checking drop, so a check is common: the move count, the exchange
+/// and LMR treat it as any move. A futility skip is made and tested for
+/// check only if its piece can reach an enemy royal.
 ///
 /// Drops join the move list when no winning capture is left or the list
 /// runs out. Most shogi nodes cut before they need one of the many drops.
