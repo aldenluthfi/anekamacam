@@ -38,7 +38,8 @@ arrays, the word count passed to the attack casts, and the goal race
 flooded with maps (koth x0.85). seefsf, goalz and the typed or race
 forms of the danger did not merge or stay closed. A pawn of a pawn
 mass counts its defenders and neighbours: build 45, horde +30.4
-(queue294). At build
+(queue294). A repetition from before the root waits for the rule
+count: build 46, a correctness fix, level in play (queue297). At build
 40, and at every tenth build
 after it, a sweep plays every variant that FSF plays against FSF
 at `UCI_Elo` 2000, 400 games each (asked by the user, 2026-10-26).
@@ -3292,6 +3293,13 @@ round a (FSF's phase from its xiangqi values):
   removes is real (4 of 30 grand falls), but its rate in play is too
   small to show against the noise, and grand, where it was found, did
   not gain.
+- Merged after all as build 46 (user, 2026-11-05): reproot is a
+  correctness fix, so the rule is not worse, not +2σ. Mean +2.3 a pair,
+  no variant below -2σ (crazyhouse, the lowest, -11.5 over three
+  rounds), no forfeits, fixtures 38 of 38. Seeded bench of build 46:
+  standard 142660, xiangqi, crazyhouse and grand as build 45. From here
+  a fix that makes the engine follow the variant's rules merges when it
+  is not worse.
 - The three failing fixtures (kinglet twice, horde: the last pawn or
   piece taken, expected a win, got `Ongoing`) failed on build 45 too.
   Cause: their FENs had two or three fields where castling and en
