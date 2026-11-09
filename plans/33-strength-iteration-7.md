@@ -3388,6 +3388,20 @@ round a (FSF's phase from its xiangqi values):
   1.6σ from the earlier runs; reproot played threecheck level (-25.4,
   +23.7), so this is not yet a shift.
 
+### Koth: no pruning part hides the falls
+
+- 40 koth falls of build 45 (queue297), build 46 at 4 s against FSF at
+  0.5 s: in 19 FSF scores 150 cp or more under us.
+- E, tested (a diagnostic, `plan33-kdiag`, deleted: an environment mask
+  clears capability bits at load, one bit turns LMR off), the 19 at 4 s,
+  counted within 100 cp of FSF: all parts on 1 of 19 (mean depth 11.6);
+  null move off 1 (11.3); forward pruning off 1 (8.8); quiet pruning off
+  1 (11.4); exchange pruning off 1 (11.5); LMR off 3 (10.2).
+- So no one cut of ours drops the line FSF finds: it lies past our
+  horizon in all forms, and the static scores at its end agree (koth's
+  line ends above). Koth's chain stops at depth itself: a ply is worth
+  less to us (the LMR chain, goalz +9.2).
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
