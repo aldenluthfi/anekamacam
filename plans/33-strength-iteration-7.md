@@ -3407,6 +3407,43 @@ round a (FSF's phase from its xiangqi values):
   grand 0 of 20 in every form. Their falls are the evaluation, as the
   depth probes said; no search part hides them.
 
+### Why a ply is worth less to us (user: option 3, 2026-11-09)
+
+- The old split (plies per doubling: ours x1.97 a ply, FSF x1.68) set
+  our seeded bench (mostly endings) against FSF's chess bench. On the
+  same 20 middle-game positions of standard (ply 30, depth 6 to 12) our
+  tree grows x1.63 a ply and FSF's x1.98: that split is withdrawn. A
+  nominal ply is not a shared unit.
+- Move order, measured in both engines on the same positions to depth
+  10 (diagnostics `plan33-ordiag` and an FSF build with the same
+  counters, both deleted): first-move cuts ours 89.0, 92.2, 91.9, 91.7%
+  (standard, xiangqi, crazyhouse, grand), FSF 85.0 to 86.3%; a hash move
+  at a cut node ours 33 to 40%, FSF 25 to 27%. Our order is not the gap.
+  FSF's history step (`6 d^2 + 229 d - 215`) in ours changes neither
+  measure; nodes rise near 10%.
+- Moves searched at an all node, checks / captures / quiet:
+
+| Variant | Ours | FSF | Our excess |
+|---------|------|-----|------------|
+| standard | 0.57 / 1.20 / 4.12 | 0.19 / 1.03 / 2.69 | +0.38 / +0.17 / +1.43 |
+| xiangqi | 0.70 / 1.65 / 2.60 | 0.16 / 0.93 / 2.56 | +0.54 / +0.72 / +0.04 |
+| crazyhouse | 0.97 / 1.54 / 3.41 | 0.63 / 1.43 / 1.91 | +0.34 / +0.11 / +1.50 |
+| grand | 0.70 / 1.77 / 4.46 | 0.13 / 0.94 / 3.13 | +0.57 / +0.83 / +1.33 |
+
+- Our move count is FSF's (3 + d^2, 55% against its 50% not
+  improving). FSF's other quiet cuts are the ones we tried: futility at
+  the reduced depth (FR, plan 29, no node change), the continuation
+  history skip (chp, xf, xfc), the quiet exchange prune (QP, plan 27,
+  grand -2.0 ± 21.8 at -30% nodes). Each cut the tree and gave no
+  strength; the checks we keep are the check rule, whose cuts lose
+  (PC, CR, CR3, CR3b, PC26).
+- So the tree is not where the ply's value is lost. Every chain on the
+  search side ends where plan 29 left the check rule: our engine finds
+  by search the king threats FSF's evaluation scores, and the king terms
+  are worth near a tenth of FSF's (eval map: 29, 57 and 17 against 295,
+  214 and 288 in standard, crazyhouse and capablanca). Option 3 meets
+  options 1 and 2 at the king's evaluation.
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
