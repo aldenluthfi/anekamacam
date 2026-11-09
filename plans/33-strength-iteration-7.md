@@ -3401,6 +3401,11 @@ round a (FSF's phase from its xiangqi values):
   horizon in all forms, and the static scores at its end agree (koth's
   line ends above). Koth's chain stops at depth itself: a ply is worth
   less to us (the LMR chain, goalz +9.2).
+- The same test in crazyhouse and grand (`plan33-zgdiag`, deleted; falls
+  of queues 297 and 298, 30 each, FSF at 0.5 s): crazyhouse 0 of 23
+  within 100 cp with all parts on, at most 1 of 23 with any part off;
+  grand 0 of 20 in every form. Their falls are the evaluation, as the
+  depth probes said; no search part hides them.
 
 ### The next weakest variants
 
