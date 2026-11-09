@@ -3312,6 +3312,48 @@ round a (FSF's phase from its xiangqi values):
   With full FENs and `a7a8k` (dd1e000): 38 of 38 on build 45 and on
   reproot. The extinct rules were right all along.
 
+### Build 46: no other rule anomaly in the falls
+
+- The flat-score test that found reproot, on 40 falls each of
+  crazyhouse, threecheck, koth, grand and horde (queues 294 to 297),
+  build 46 at 1 and 4 s: no score that holds the same, short of mate,
+  from depth 24 on. No other draw rule misfires in these falls.
+
+### pawnpool, grand's opening pawn
+
+- Grand's pawn is worth 100 in the opening and 101 in the endgame;
+  standard's 61 and 101 (pawnmg, build 38, FSF's 126 over 208). FSF
+  prices grand's pawn as chess's. Against the pieces, our grand opening
+  pawn is near 1.6 times as dear as FSF's (rook 7.2 pawns, FSF 10.1),
+  and in the endgame it is cheap (rook 9.2, FSF 6.6): the material
+  gap of grand's falls.
+- Cause: pawnmg applies to a pawn whose promotion target is the dearest
+  piece, and `derive_promotion_target` gives the cheapest target where a
+  pawn promotes only to a captured piece. Grand's pawn can promote to the
+  dearest type once it is traded, so its worth is the promotion too.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| pawnmg (build 38) | +27.1, merged | the pawn's worth is its promotion | a pawn whose sure target is the dearest | grand: the dearest is in its list, once captured |
+| pieceg (queues 282, 290) | grand +18.4, others lost; cut | | the endgame value of each piece | the opening pawn only, grand only |
+| pstr3 (queue289) | grand 0.0 | the connected part is not the gap | | values, not structure |
+
+- pawnpool (`plan33-pawnpool`, 4d3c8fd, from build 46): the pawn rule
+  reads the promotion list: a pawn that can promote to the dearest type
+  is cheaper in the opening, captured pool or not. The parameter files
+  made again from a clone without them (40 of 44, the derive stopped on
+  memory; the other four have no captured pool): only grand changes,
+  its pawn 100 to 61 and its table by 1. Seeded bench: grand 485065
+  (505020), standard, xiangqi, crazyhouse and shogi the same. Smoke
+  0-3-1 in grand, no forfeits.
+- Queue298: build 46 and pawnpool in grand, three rounds. Rule set before
+  the games: +2σ in grand.
+- Queue298, pawnpool minus build 46 in grand: +16.3, +40.6, -51.3
+  (+1.9, σ near 20). No forfeits. Not merged; the branch and binary are
+  deleted. FSF's pawn ratio does not carry to grand under our other
+  values, as pieceg's endgame part did not; grand's material gap is not
+  one value of the table.
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
