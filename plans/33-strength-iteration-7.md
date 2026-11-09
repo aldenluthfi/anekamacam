@@ -3354,6 +3354,40 @@ round a (FSF's phase from its xiangqi values):
   values, as pieceg's endgame part did not; grand's material gap is not
   one value of the table.
 
+### raceclock, the clock in a race of checks
+
+- Our clock at our last move in lost games (queue297, build 45, mean):
+  threecheck 3.6 s after 27 of our moves, koth 2.1 s (37), crazyhouse
+  1.5 s (30, its clock plans 15 moves), standard 1.3 s (66), grand 0.8 s
+  (66). Threecheck's games are as short as crazyhouse's and leave the
+  most clock unspent.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| T2 (plan 27, 15 moves) | grand -36 | grand's long games ran short | every variant | only where a count of checks wins |
+| zhclock (queue276) | crazyhouse +33.1, in build 37 | a game with a hand ends by mate, sooner | captures fill the hand | a race of checks ends it sooner too |
+| tclock (queue277) | +36.9, build 37 | the clock left unspent | | threecheck's unspent clock |
+
+- raceclock (`plan33-raceclock`, from build 46): the clock plans for 15
+  moves where a count of checks wins, as where the captures fill the
+  hand (`CLOCK_SHORT_RATIO`, the old `CLOCK_HAND_RATIO`). Only
+  threecheck and fivecheck change. One move at 30 s (input kept open;
+  noisy at depth edges): threecheck 839 and 1102 ms against 1663 and
+  1051, fivecheck 980 and 978 against 2169 and 1255. Smoke 2-2 in
+  threecheck, no forfeits.
+- Queue299: build 46 and raceclock in threecheck and fivecheck, three
+  rounds. Rule set before the games: +2σ on the mean of the two, none
+  below -2σ.
+- Queue299 (cut after three pairs, `watch.sh`; the three left needed
+  +72.9 each): raceclock minus build 46, threecheck -51.0, -36.8;
+  fivecheck +31.4. No forfeits. Not merged; the branch and binary are
+  deleted. A race's clock left unspent is not a lever: in threecheck
+  the time spent early costs more than the reserve brings.
+- Build 46 in threecheck here: -6.9 and -12.2 (build 45 in queue297
+  -59.6, -86.9; build 43 in queue296 -54.3, -41.9). Two rounds, near
+  1.6σ from the earlier runs; reproot played threecheck level (-25.4,
+  +23.7), so this is not yet a shift.
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
