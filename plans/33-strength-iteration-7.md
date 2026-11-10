@@ -3549,6 +3549,19 @@ round a (FSF's phase from its xiangqi values):
 - Build 47 (goalfast2): the same seeded nodes in 43 of the 44 variants;
   taikyoku (its search near 10 GB, which ran the machine short) has no
   goal rule and never runs the code. Merged on speed.
+- attackstarts (reverted): `is_square_attacked!` read every mask that
+  can reach the square (6 to 8% of the samples of a line-table profile
+  in standard, crazyhouse and grand, the engine's setup included). A
+  bitboard of each square's start squares let it walk only the occupied
+  ones, with a binary search into the masks, which are already in start
+  order. The same seeded nodes, but slower: medians of five alternating
+  benches standard x0.94, crazyhouse x1.10, grand x1.05. The flat scan
+  over adjacent masks is cheap for each mask; the walk costs more than
+  the reads it skips.
+- Not pursued: generating the board moves after the table move. Make and
+  undo swap-remove and push the piece lists, so their order follows the
+  path of the search; moves made later come in another order and the
+  tree changes, as with seecache.
 
 ### lmptried, the move count counts every move reached
 
