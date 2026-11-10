@@ -3251,6 +3251,34 @@ round a (FSF's phase from its xiangqi values):
   for every variant does not fit; the safe check needs a rule-derived
   part that reads what the royal must do.
 
+### hand, Fairy-Stockfish's two hand terms together (build 47)
+
+- Crazyhouse stands near -160 under FSF 2100, the weakest variant. A
+  probe on 60 positions of build 46's lost crazyhouse games (`dparts`,
+  our royal, full rings, FSF / ours): sum 0.94 / 0.61, attackers 0.23 /
+  0.05, hits 0.17 / 0.06, weak 0.17 / 0.12, checks 0.23 / 0.19, flank
+  0.04 / 0 (pins 0.01). The same gap as on build 37: FSF's held
+  attackers and their drop hits. The flank is not it.
+- FSF has two hand terms we lack: a held piece that can drop on the
+  ring is a ring attacker and its drops next to the king are hits
+  (`hand()`, `e_khand` worth 58.5 to FSF in its lab), and drop
+  mobility.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| KH (queue266, build 36) | crazyhouse +1.3 ± 21.2 | fit 0.86 to 0.90, plays the same | alone | together with dropmob |
+| dropmob (queue268) | crazyhouse +18.7, 0.85σ | fit 0.70 to 0.92 | alone | together with KH |
+| parity (queue271) | crazyhouse +45.8 over two rounds | standard lost (tpiece, kring) | all variants | only the hand terms, which leave a game without a hand untouched |
+| DX, PX, DW, zhscale | lost or noise | the size, not the inputs | | no size changes |
+
+- hand (`plan33-hand`, f81c7ad, from build 47): KH (edd5f93) and dropmob
+  (ca6221f) ported as they were. Seeded bench: standard 142660 and
+  xiangqi 254503 the same, crazyhouse 464465 (442555), shogi 236095
+  (180672). Smoke 2-2 in crazyhouse, no forfeits.
+- Queue302, after queue301: build 47 and hand in crazyhouse and shogi
+  (the drop variants of the test set), three rounds. Rule set before the
+  games: +2σ on the mean of the two, none below -2σ.
+
 ### Grand's falls, and a repetition before the root
 
 - The depth probe on 30 grand falls (queues 291, 296, builds 43 and
@@ -3511,6 +3539,41 @@ round a (FSF's phase from its xiangqi values):
 - Build 47 (goalfast2): the same seeded nodes in 43 of the 44 variants;
   taikyoku (its search near 10 GB, which ran the machine short) has no
   goal rule and never runs the code. Merged on speed.
+
+### lmptried, the move count counts every move reached
+
+- Our excess at an all node is the quiet moves (+1.43 in standard, +1.50
+  in crazyhouse, +1.33 in grand). Our move count compares the legal
+  moves searched; FSF's `moveCount` counts every legal move it reaches,
+  the pruned ones too, so its count fills sooner.
+- lmptried (`plan33-lmptried`, 87b7fe4, from build 47): the threshold
+  reads the moves reached, searched or skipped (a held check, a royal
+  line, a futile or late quiet), not the illegal ones. The rest is as
+  before.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| lmp off (plan 33 ablation) | standard -70.8, crazyhouse -27.4 | our largest prune | searched moves | |
+| FR (plan 29) | no node change | | reduced depth | |
+| QP (plan 27) | grand -2.0 ± 21.8 at -30% nodes | | quiet exchange | |
+| chp, xf, xfc | tree cut, no strength | | continuation history | |
+| lmptried | | | | the count of moves reached |
+
+- Seeded bench (bare endings in standard): standard 142660, xiangqi
+  254503 and grand 505020 the same, crazyhouse 442555 to 344470. Smoke
+  2-2 in crazyhouse, no forfeits.
+- Queue301: build 47 and lmptried in crazyhouse and standard, three
+  rounds of 200. Rule set before the games: +2σ on the mean of the two,
+  none below -2σ.
+- Queue301 (cut after five pairs, `watch.sh`; the last needed +161.5):
+  lmptried minus build 47, crazyhouse +18.4, -81.4, -7.7 (-23.6);
+  standard +69.9, +23.0 (+46.5, near 1.9σ). No forfeits. Not merged.
+- The sign splits by variant, and grand, koth and threecheck have not
+  played it. A subset chosen after the games plays again (as uq2 did):
+  queue303, after queue302, plays build 47 and lmptried fresh in all
+  five test variants, crazyhouse, grand, koth, threecheck and standard,
+  three rounds. Rule set before the games: +2σ on the mean of the five,
+  none below -2σ. The branch and binary stay until then.
 
 ### The next weakest variants
 
