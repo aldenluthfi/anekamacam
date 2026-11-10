@@ -3289,6 +3289,32 @@ round a (FSF's phase from its xiangqi values):
   hand terms together are worse than none here: the hand chain stays
   closed.
 
+### dropmob2, drop mobility alone (build 47)
+
+- After hand, the one hand term with a lean of its own is drop mobility:
+  +18.7 alone (queue268), and in the parity bundle's crazyhouse +45.8;
+  KH alone was +1.3. Shogi never played it.
+- Not the clock: in build 47's crazyhouse games (queues 302, 303) our
+  falls (150 cp between two of our moves, from 0 or more) peak at our
+  moves 10 to 20, 8.1% to 10.6% of the moves, with 4.3 to 2.9 s left;
+  later, on the increment, 7% to 9%. In grand the peak is at moves 10 to
+  40 (3% to 4%, 5 to 2 s left), and 1% to 2% after move 50, where 30%
+  of our grand moves are played under 1 s.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| dropmob (queue268) | crazyhouse +18.7, 0.85σ | fit 0.70 to 0.92 | build 36, crazyhouse only | build 47, shogi too |
+| hand (queue302) | crazyhouse -28.1, shogi -101.3 | not known (KH's held pawns read) | with KH | without KH |
+
+- dropmob2 (`plan33-dropmob2`, 9edf86a, from build 47): dropmob's form
+  as in hand, without KH. Seeded bench: standard 142660 and xiangqi
+  254503 the same, crazyhouse 439131 (442555), shogi 172526 (180672).
+  Smoke 0-4 in crazyhouse (build 47 scores near 30% there), no
+  forfeits.
+- Queue304: build 47 and dropmob2 in crazyhouse and shogi, three rounds.
+  Rule set before the games: +2σ on the mean of the two, none below
+  -2σ.
+
 ### Grand's falls, and a repetition before the root
 
 - The depth probe on 30 grand falls (queues 291, 296, builds 43 and
