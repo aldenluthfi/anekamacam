@@ -554,7 +554,7 @@ macro_rules! goal_race {
                 };
 
                 let words = $words;
-                let mut own_pawns = vec![0u64; words];                          /* pawns that must make way first     */
+                let mut own_pawns = [0u64; BOARD_WORDS];                        /* pawns that must make way first     */
 
                 for &pawn in &statics.eval.pawn_pieces {
                     if p_color!(&statics.pieces[pawn]) as usize != $color {
@@ -573,12 +573,11 @@ macro_rules! goal_race {
                     }
 
                     let row = piece_index * board_size;
-                    let mut waves = [                                           /* entered in 0, 1 and 2 more moves   */
-                        vec![0u64; words], vec![0u64; words], vec![0u64; words]
-                    ];
-                    let mut current = vec![0u64; words];
-                    let mut reach = vec![0u64; words];                          /* landings of the current set        */
-                    let mut queued = vec![0u64; words];                         /* the first wave a square enters is  */
+                    let mut waves = [[0u64; BOARD_WORDS]; 3];                   /* a ring: entered in 0, 1 and 2 more */
+                    let mut head = 0;                                           /* moves from the wave at `head` on   */
+                    let mut current = [0u64; BOARD_WORDS];
+                    let mut reach = [0u64; BOARD_WORDS];                        /* landings of the current set        */
+                    let mut queued = [0u64; BOARD_WORDS];                       /* the first wave a square enters is  */
                     let mut found = 0;                                          /* its earliest, its hold never moves */
 
                     for &start in piece_squares!($state, piece_index) {
@@ -590,13 +589,19 @@ macro_rules! goal_race {
 
                     for moves in 0.. {
                         if found == zone_size
-                            || waves.iter().flatten().all(|word| *word == 0) {
+                            || waves.iter().all(|wave| {
+                                wave[..words].iter().all(|bits| *bits == 0)
+                            })
+                        {
                             break;
                         }
 
-                        waves.rotate_left(1);
-                        std::mem::swap(&mut waves[2], &mut current);            /* a clear set for 2 more moves       */
-                        reach.fill(0);
+                        current[..words].copy_from_slice(&waves[head][..words]);
+                        waves[head][..words].fill(0);                           /* a clear set for 2 more moves       */
+                        head = (head + 1) % 3;
+                        reach[..words].fill(0);
+
+                        let (later, latest) = ((head + 1) % 3, (head + 2) % 3);
 
                         for word in 0..words {
                             let mut bits = current[word];
@@ -623,7 +628,9 @@ macro_rules! goal_race {
                                 let start = (row + from as usize) * words;
                                 let map = &goal.landings[start..start + words];
 
-                                for (into, step) in reach.iter_mut().zip(map) {
+                                for (into, step) in reach[..words].iter_mut()
+                                    .zip(map)
+                                {
                                     *into |= step;
                                 }
                             }
@@ -636,9 +643,9 @@ macro_rules! goal_race {
                             let mut pawns = fresh & own_pawns[word];
 
                             queued[word] |= fresh;
-                            waves[0][word] |= open & !once;
-                            waves[1][word] |= open & once & !strong;
-                            waves[2][word] |= open & once & strong;
+                            waves[head][word] |= open & !once;
+                            waves[later][word] |= open & once & !strong;
+                            waves[latest][word] |= open & once & strong;
 
                             while pawns != 0 {
                                 let at = (word << 6
@@ -649,12 +656,10 @@ macro_rules! goal_race {
                                 pawns &= pawns - 1;
 
                                 if !stuck(holder as usize, at) {
-                                    waves[2][word] |= 1u64 << (at & 63);
+                                    waves[latest][word] |= 1u64 << (at & 63);
                                 }
                             }
                         }
-
-                        current.fill(0);
                     }
                 }
 

@@ -3473,6 +3473,36 @@ round a (FSF's phase from its xiangqi values):
   one weight. Closed: no rule-derived typed form is built. The branch
   and binary are deleted.
 
+### Speed against FSF, build 46
+
+- Nodes a second over 12 positions (ply 30, 1 s each), ours / FSF
+  classical: standard 302k / 497k (0.61), crazyhouse 179k / 322k
+  (0.55), grand 160k / 334k (0.48), koth 169k / 361k (0.47). At our 108
+  a doubling, the speed gap is worth more than any eval term left, and
+  the weakest variants are the slowest.
+- Where a middle-game search spends its time (`hotpath` build, one
+  position each, inclusive and so a little high): SEE (`order::see`,
+  its `lva!` and its moves) 22% in standard, 37% in grand, 23% in koth,
+  10% in crazyhouse; the evaluation 22%, 19%, 40% and 16%; in koth
+  `goal_race!` alone near 11% of the samples.
+- Two SEE tries, both reverted:
+  - seecut, the swap list's cut (stop once `max(-gain[d-1], gain[d]) <
+    0`): not node-identical (crazyhouse 442555 to 493583, capablanca
+    343625 to 444074); our SEE value is exact, and the cut keeps only
+    its sign.
+  - lvaclass, `lva!` makes only the cheapest attacker class: node-
+    identical in six variants, but slower (grand middle game 3554 to
+    3834 ms, benches x1.00 to x1.06): pricing each attacker first costs
+    more than the moves it saves.
+- goalfast2 (`plan33-goalfast2`, from build 46): `goal_race!` keeps its
+  sets in stack arrays of `BOARD_WORDS` with a ring index for the three
+  waves, where it made seven `Vec`s a call. Koth middle game at depth
+  13, five runs: median 959 against 1105 ms (x0.868), the same 149741
+  nodes; koth from the start the same 29040.
+- Build 47 (goalfast2): the same seeded nodes in 43 of the 44 variants;
+  taikyoku (its search near 10 GB, which ran the machine short) has no
+  goal rule and never runs the code. Merged on speed.
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
