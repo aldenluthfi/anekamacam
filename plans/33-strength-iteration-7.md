@@ -3499,6 +3499,15 @@ round a (FSF's phase from its xiangqi values):
   waves, where it made seven `Vec`s a call. Koth middle game at depth
   13, five runs: median 959 against 1105 ms (x0.868), the same 149741
   nodes; koth from the start the same 29040.
+- seecache (reverted): the exchange values of `see!` in a per-worker
+  cache under the table's key (`search_key`) and the move bits, multi-
+  captures uncached. Nodes change in five of six benches (xiangqi 254503
+  to 234270, capablanca 343625 to 448409), with the full key stored, so
+  a skipped `see!` changes the tree though its value is the same. A
+  reading, not tested: `see!` makes and undoes real moves, and the piece
+  lists can come back in another order, which reorders the moves after
+  it. Nodes a second on 12 middle-game positions: standard x0.91, grand
+  x1.02, koth x1.01, crazyhouse x1.04; the cache hits too rarely to pay.
 - Build 47 (goalfast2): the same seeded nodes in 43 of the 44 variants;
   taikyoku (its search near 10 GB, which ran the machine short) has no
   goal rule and never runs the code. Merged on speed.
