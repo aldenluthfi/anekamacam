@@ -3584,6 +3584,15 @@ round a (FSF's phase from its xiangqi values):
   five test variants, crazyhouse, grand, koth, threecheck and standard,
   three rounds. Rule set before the games: +2σ on the mean of the five,
   none below -2σ. The branch and binary stay until then.
+- Queue303 (cut after round a, `watch.sh`; the ten pairs left needed
+  +37.3 each against a trend of -19.8): lmptried minus build 47,
+  crazyhouse -31.5, grand -10.9, koth +31.8, threecheck -23.4, standard
+  -65.2. No forfeits. Not merged; the branch and binary are deleted.
+- Standard's +46.5 in queue301 turned to -65.2: the noise of two rounds,
+  as queue273 showed. Counting the skipped moves fills the count sooner
+  and cuts the tree, as FR, QP and the history skips did, and as with
+  them the cut buys nothing. Our quiet excess at an all node stays, and
+  every way to cut it has now played level or worse.
 
 ### The next weakest variants
 
