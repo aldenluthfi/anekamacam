@@ -3314,6 +3314,12 @@ round a (FSF's phase from its xiangqi values):
 - Queue304: build 47 and dropmob2 in crazyhouse and shogi, three rounds.
   Rule set before the games: +2σ on the mean of the two, none below
   -2σ.
+- Queue304 (cut after round a, `watch.sh`; the four pairs left needed
+  +56.0 each): dropmob2 minus build 47, crazyhouse -11.6, shogi -40.1.
+  No forfeits. Not merged; the branch and binary are deleted.
+- Both of FSF's hand terms now lose on build 47, alone or together, and
+  shogi loses more than crazyhouse each time. Queue268's +18.7 was on
+  build 36. The hand chain is closed.
 
 ### Grand's falls, and a repetition before the root
 
