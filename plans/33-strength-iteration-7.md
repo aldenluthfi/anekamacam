@@ -3278,6 +3278,16 @@ round a (FSF's phase from its xiangqi values):
 - Queue302, after queue301: build 47 and hand in crazyhouse and shogi
   (the drop variants of the test set), three rounds. Rule set before the
   games: +2σ on the mean of the two, none below -2σ.
+- Queue302 (cut after round a, `watch.sh`; the four pairs left needed
+  +77.0 each): hand minus build 47, crazyhouse -28.1, shogi -101.3 (near
+  2.9σ alone). No forfeits. Not merged; the branch and binary are
+  deleted.
+- A reading, not tested: KH counts every held type as an attacker, the
+  pawn too, and a shogi hand holds many pawns; FSF leaves its shogi pawn
+  out of the hand attackers and drops each type only on its own region.
+  Crazyhouse lost too, where the pawns count in FSF as well, so the two
+  hand terms together are worse than none here: the hand chain stays
+  closed.
 
 ### Grand's falls, and a repetition before the root
 
