@@ -3444,6 +3444,35 @@ round a (FSF's phase from its xiangqi values):
   214 and 288 in standard, crazyhouse and capablanca). Option 3 meets
   options 1 and 2 at the king's evaluation.
 
+### ttype, are typed check weights worth anything (diagnostic)
+
+- Before any rule-derived form of the safe check weight by type, its
+  value in play: `plan33-ttype` (from build 46, never merges) gives a
+  safe check by letter FSF's rows over its full weak ring (N 488 and
+  784, B 388 and 591, R 660 and 1140, Q 461 and 687; others keep the
+  fairy row). Xiangqi's chariot and horse take R and N too. Seeded
+  bench: standard 161558 (142660), crazyhouse 399740 (442555), xiangqi
+  241056 (254503). Smoke 2-2 in crazyhouse, no forfeits.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| KD (plan 29) | merged, one fairy weight for all types | the port reads no names | | the typed rows, as a diagnostic |
+| checkmean (queue296) | standard, xiangqi gained; koth, grand lost | | one mean weight | the spread between types |
+| the fit test (plan 33) | typed checks raise the fit 0.88 to 0.94 | | positions only | games |
+
+- Queue300: build 46 and ttype in crazyhouse, threecheck, standard,
+  grand and koth, three rounds. Rule set before the games: at +2σ or
+  more on the mean of the five, a rule-derived typed weight is worth
+  building; below, the typed spread is closed.
+- Queue300 (cut after round a, `watch.sh`; the ten pairs left needed
+  +41.9 each against a trend of -28.1): ttype minus build 46,
+  crazyhouse -4.3, threecheck -14.2, standard -89.2, grand -9.6, koth
+  -23.4. No forfeits. FSF's typed rows lose in all five, most in
+  standard, where the mean weight (checkmean) gained +42. The spread by
+  type is FSF's own fit to its other terms; in ours it is worse than
+  one weight. Closed: no rule-derived typed form is built. The branch
+  and binary are deleted.
+
 ### The next weakest variants
 
 - Fivecheck stands at +47.2 (queue291, build 43), above 2100 since uq2.
