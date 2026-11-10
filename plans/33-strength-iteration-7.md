@@ -3321,6 +3321,35 @@ round a (FSF's phase from its xiangqi values):
   shogi loses more than crazyhouse each time. Queue268's +18.7 was on
   build 36. The hand chain is closed.
 
+### tshape, a move's share grows with the game ply
+
+- Build 47's time a move in grand (queue303 round a): near 0.32 s in our
+  moves 0 to 10, where 0.7% of our moves fall; 0.19, 0.12 and 0.08 s in
+  moves 10 to 40, where 3% to 4% fall. Crazyhouse falls most in moves 10
+  to 20 (8% to 11%). The clock spends an even share of what is left, so
+  it gives the most to the opening, where the games start from the book
+  and fall least.
+- Past tries set how many moves the clock plans (T2 15, T3 30 merged, T4
+  40, zhclock and tclock merged) and when a depth may start (T1, T1b
+  merged, tstab). None shaped the share by the ply.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| T2 (15 moves) | grand -36 | grand's long games ran short | every move more | the opening less, the middle game more |
+| tclock (20 moves) | +36.9, merged | the clock left unspent | | the same total, a new order |
+
+- tshape (`plan33-tshape`, b5aceff, from build 47): without `movestogo`,
+  a share is `((ply + 3) / (pivot + 3))^0.45` of the even share, as
+  Stockfish's optimum time grows with the ply; the pivot is the ply of
+  the planned moves (40, 30 where the captures fill the hand). At the
+  book's first move (ply 8) a share is 0.54 of the even one, at ply 20
+  0.75, at ply 80 1.31. Nodes are the same (the bench has no clock).
+- Smoke 4-3-1 in grand, no forfeits; our clock at moves 0, 10, 20, 30,
+  40: 8.6, 5.7, 3.5, 1.9, 1.0 s (build 47 8.2, 5.0, 3.1, 1.9, 1.1).
+- Queue305: build 47 and tshape in crazyhouse, grand, koth, threecheck
+  and standard, three rounds. Rule set before the games: +2σ on the mean
+  of the five, none below -2σ.
+
 ### Grand's falls, and a repetition before the root
 
 - The depth probe on 30 grand falls (queues 291, 296, builds 43 and
