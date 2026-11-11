@@ -3363,6 +3363,16 @@ round a (FSF's phase from its xiangqi values):
 - tshape2 (below) keeps an even share where the captures fill the hand.
   The subset is chosen after queue305, so it plays fresh.
 
+### tshape2, the ply shape only without a hand
+
+- tshape2 (`plan33-tshape2`, 092a1bf, from build 47): tshape's shape
+  where the captures do not fill the hand; there the clock keeps the
+  even share (an empty `clock_shape`), so crazyhouse and every game with
+  a hand play as build 47. Smoke 2-2 in threecheck, no forfeits.
+- Queue306: build 47 and tshape2 in grand, koth, threecheck and
+  standard, three rounds, fresh games. Rule set before the games: +2σ on
+  the mean of the four, none below -2σ.
+
 ### Grand's falls, and a repetition before the root
 
 - The depth probe on 30 grand falls (queues 291, 296, builds 43 and
