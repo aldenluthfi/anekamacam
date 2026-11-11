@@ -3372,6 +3372,15 @@ round a (FSF's phase from its xiangqi values):
 - Queue306: build 47 and tshape2 in grand, koth, threecheck and
   standard, three rounds, fresh games. Rule set before the games: +2σ on
   the mean of the four, none below -2σ.
+- Queue306 (cut after eight pairs, `watch.sh`; the four left needed
+  +67.2 each): tshape2 minus build 47, grand +10.6, -5.6; koth +51.8,
+  +29.5; threecheck -23.1, -1.8; standard -34.1, -56.9. No forfeits.
+  Not merged; the branch and binary are deleted.
+- Standard and threecheck turned from +17.0 and +35.5 to -45.5 and -12.5:
+  queue305's split outside the hand games was noise. Koth gained in all
+  four rounds of both queues (+22.8, +10.5, +51.8, +29.5; +28.7, near
+  1.7σ), alone among the variants. The ply shape is closed for the
+  mean; koth's lean is noted and has no mechanism of its own yet.
 
 ### Grand's falls, and a repetition before the root
 
