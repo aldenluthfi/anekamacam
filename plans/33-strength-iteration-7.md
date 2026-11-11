@@ -3349,6 +3349,19 @@ round a (FSF's phase from its xiangqi values):
 - Queue305: build 47 and tshape in crazyhouse, grand, koth, threecheck
   and standard, three rounds. Rule set before the games: +2σ on the mean
   of the five, none below -2σ.
+- Queue305 (cut after eleven pairs, `watch.sh`; the four left needed
+  +69.2 each): tshape minus build 47, crazyhouse -30.4, -6.0, -52.6
+  (-29.7); grand -64.3, +12.5; koth +22.8, +10.5; threecheck +12.8,
+  +58.1 (+35.5); standard +22.9, +11.0. No forfeits. Not merged; the
+  branch and binary are deleted.
+- The sign splits where the captures fill the hand, as zhclock's did the
+  other way: there, spending more in the first moves played +33, and
+  tshape spends less in them and loses in all three rounds. A game with
+  a hand ends by a mate and soon, so its first moves are already the
+  middle game; that is why the clock plans fewer moves there. Without a
+  hand the four rounds of koth, threecheck and standard are all above 0.
+- tshape2 (below) keeps an even share where the captures fill the hand.
+  The subset is chosen after queue305, so it plays fresh.
 
 ### Grand's falls, and a repetition before the root
 
