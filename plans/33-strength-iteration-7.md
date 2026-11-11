@@ -3381,6 +3381,21 @@ round a (FSF's phase from its xiangqi values):
   four rounds of both queues (+22.8, +10.5, +51.8, +29.5; +28.7, near
   1.7σ), alone among the variants. The ply shape is closed for the
   mean; koth's lean is noted and has no mechanism of its own yet.
+- A mechanism from the record: koth is the one test variant whose falls
+  are past our horizon (the koth search probes: the static scores at the
+  ends of FSF's lines agree, no pruning part hides them), where the
+  others' are the evaluation. Time in the middle game is depth where
+  koth falls; for an evaluation fall, depth buys little.
+
+### tshape3, the ply shape where a piece races to a goal
+
+- tshape3 (`plan33-tshape3`, 4625526, from build 47): tshape's shape
+  where the rules have a goal (`termination.goal`), elsewhere the even
+  share. Only koth has a goal among the 44 variants, so nothing else
+  changes. Smoke 2-2 in koth, no forfeits.
+- The subset is chosen after queues 305 and 306, so it plays fresh.
+- Queue307: build 47 and tshape3 in koth, six rounds (one variant needs
+  the smaller σ). Rule set before the games: +2σ in koth over the six.
 
 ### Grand's falls, and a repetition before the root
 
