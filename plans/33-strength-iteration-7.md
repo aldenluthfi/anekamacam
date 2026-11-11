@@ -3396,6 +3396,15 @@ round a (FSF's phase from its xiangqi values):
 - The subset is chosen after queues 305 and 306, so it plays fresh.
 - Queue307: build 47 and tshape3 in koth, six rounds (one variant needs
   the smaller σ). Rule set before the games: +2σ in koth over the six.
+- Queue307 (cut after two pairs, `watch.sh`; the four left needed +53.3
+  each): tshape3 minus build 47 in koth, -14.1, -29.9. No forfeits. Not
+  merged; the branch and binary are deleted.
+- Koth's four positive rounds were noise as well: over six rounds of
+  tshape, tshape2 and tshape3 in koth the mean is +11.8, under 1σ. The
+  shape of the clock by ply is closed in every form. Three queues on
+  one idea, each split chosen from the last, found nothing that held:
+  a split that the queue before showed is weak evidence at 200 games a
+  round.
 
 ### Grand's falls, and a repetition before the root
 
