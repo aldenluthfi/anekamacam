@@ -3406,6 +3406,36 @@ round a (FSF's phase from its xiangqi values):
   a split that the queue before showed is weak evidence at 200 games a
   round.
 
+### The speed project (user: option 1, 2026-11-12)
+
+- After seven candidates closed on build 47, the user chose structural
+  speed. Our nodes a second are 0.47 to 0.61 of FSF's, and a doubling is
+  worth near 108 here, the size of the gaps to 2100.
+- Where grand's search spends its time (`hotpath` build of build 47, the
+  grand middle game at depth 13, 2.6 s of search after 0.8 s of setup;
+  inclusive): the exchange (`order::see`) 23%, of which near 600k of the
+  1.05M `make_move` calls are its own; the evaluation 30%, its attack
+  terms 21%; move generation 24% (board moves 16%, captures 8%);
+  `make_move` 21%, near half of it the legality test.
+- Each stage is exact: the same seeded nodes in all 44 variants and
+  faster, merged on speed (one commit a stage).
+
+| Stage | What | Where it saves |
+|-------|------|----------------|
+| S1 plainpath | a vector with plain legs is a mask test, not a leg walk | move generation |
+| S2 seelite | the exchange without the full make and undo | the exchange |
+| S3 sharedmaps | one set of attack maps for the evaluation and the legality tests | evaluation, `is_in_check` |
+
+- S1: a slide of `k` squares is compiled as `k` unit legs, and the
+  vectors are sorted longest first, so each ray is walked again for each
+  distance. A vector is plain when it has no condition pattern, its
+  piece cannot promote, its inner legs only move (`m`) and its last leg
+  only moves and captures (`m`, `c`), with no other modifier; then it is
+  legal when no inner square is occupied, and its end square decides
+  the move. Plain vectors get a path mask and their move is built in
+  place; the rest walk as before, in the same order. Boards of up to 128
+  squares only (two words); larger boards keep the walk.
+
 ### Grand's falls, and a repetition before the root
 
 - The depth probe on 30 grand falls (queues 291, 296, builds 43 and
