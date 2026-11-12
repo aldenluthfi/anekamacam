@@ -3464,6 +3464,41 @@ round a (FSF's phase from its xiangqi values):
   is the cost: most entries fail the board test on their start square,
   the walk runs rarely, and a second table side by side is more memory
   to read.
+- attackkeys (reverted): the board test read a compact list of (piece,
+  start) beside the entries, 4 bytes for each against near 32. Benches
+  crazyhouse x1.015, grand x1.031, xiangqi x1.014: memory was not the
+  cost either.
+- sortedlists (reverted): each piece list kept in square order, so a
+  move and its undo leave the lists as they were and the order of the
+  moves no longer follows the path of the search (the cause seecache
+  found). Perft and the standard suite the same; trees change (grand
+  505020 to 563572). Nodes a second on 12 middle games: standard -5% to
+  -9%, crazyhouse -1%, grand -1%; it only pays with an exact light
+  exchange, a rewrite of every rule `make_move!` applies to a capture.
+
+### Why chain: the check test does not get cheaper
+
+- A: three exact forms of the check test (attackstarts, plainattacks,
+  attackkeys) are not faster. B: the cost is not where they cut. C, a
+  reading: the cost is the count of entries read, not the walk or the
+  memory.
+- D, tested (a diagnostic, `plan33-mdiag`, deleted: counters in
+  `is_square_attacked!` and blocks in `make_move!`; the grand middle
+  game at depth 13): 991630 tests read 105347543 entries, 106 a test;
+  976745 entries pass the board test (0.93%, one a test), 897139 of them
+  walk their legs, and 163441 tests find an attack (16%). C holds: the
+  walk runs once a test, so a cheaper walk saves nothing, and the
+  start walk of attackstarts paid a binary search for each occupied
+  start against 106 plain compares.
+- In `make_move!`, the moves' own updates (the apply chain) take 181 ms
+  of the 2.07 s, the undo 151 ms, the end rules 55 ms, the stand-off test
+  62 ms (a block's own cost in grand, which has none), the phase 62 ms:
+  the check test is most of the make (1.21 s with the counters on).
+- Next, from D: read only the pieces on the board. `royal_lines` (side,
+  target, piece to its attack starts, boards of up to two words) tells
+  in one bit whether a piece on a square attacks the target; the piece
+  lists give the near 40 pieces of a grand middle game; an entry is
+  read only for a hit, through an index from start to its run.
 
 ### Grand's falls, and a repetition before the root
 
