@@ -3453,6 +3453,17 @@ round a (FSF's phase from its xiangqi values):
   x0.996 (bare endings); nodes a second on 12 middle games at 1 s, two
   passes, standard +9%, koth +8%, threecheck +12%.
 - Merged on speed as build 48.
+- plainattacks (reverted): the same mask form for the attack entries.
+  A plain vector's only attack leg is its last, which reads the target
+  as taken, so `is_square_attacked!` could test its path alone, and
+  `lva!` could build its capture in place. Exact (perft at depth 4 in
+  eight variants, the standard perft suite 20256 of 20256, seeded nodes
+  the same in the 39 variants), but not faster: benches crazyhouse
+  x1.022, grand x1.000, xiangqi x1.065, shogi x1.062; middle games
+  standard +2%, koth 0%, threecheck +4%. As with attackstarts, the scan
+  is the cost: most entries fail the board test on their start square,
+  the walk runs rarely, and a second table side by side is more memory
+  to read.
 
 ### Grand's falls, and a repetition before the root
 
