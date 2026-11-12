@@ -19,7 +19,7 @@ pub use crate::game::representations::{
         Adjudicate, Checks, Counter, Counting, Termination, Extinct, Goal,
         Outcome, Perpetual, Repetition,
     },
-    moves::{AttackMask, Move, MoveSignature, PseudoMove},
+    moves::{AttackMask, Move, MoveSignature, PlainStep, PseudoMove},
     pattern::{
         Pattern, PatternAllower, PatternSet, PatternStopper, PatternUnit,
         PieceSet,
@@ -55,7 +55,7 @@ pub use crate::game::moves::move_list::{
     generate_drops,
     derive_attack_recipes, generate_attack_masks, AttackRecipes,
     generate_relevant_captures, generate_relevant_castling,
-    generate_relevant_moves,
+    generate_relevant_moves, generate_plain_steps,
 };
 pub use crate::game::representations::termination::{
     adjudicate_outcome, count_repetitions, counting_limit, counting_progress,

@@ -609,6 +609,78 @@ pub fn generate_relevant_captures(
     result
 }
 
+/// generate_plain_steps
+///
+/// Gives the mask form of each vector of a relevant table, entry by entry
+/// and in the same order (see [`PlainStep`]). A vector is plain when:
+///
+/// - condition : it has no pattern, and its piece cannot promote
+/// - inner legs: they only move (`m`), with no other modifier
+/// - last leg  : it moves, captures or both (`m`, `c`), nothing else
+/// - squares   : no leg ends on the origin, and no leg stays in place
+///
+/// Then the walk of the legs tests only that the inner squares are empty
+/// and what is on the end square. Any other vector gets kind 0.
+///
+/// Params:
+/// - state: &State     -> pieces, board size and the promotion rule
+/// - table: &[MoveSet] -> `relevant_moves` or `relevant_captures`
+///
+/// Return:
+/// Vec<Vec<PlainStep>> -> one row for each table entry, or none past 128
+///                        squares, where a mask needs more than two words
+///
+pub fn generate_plain_steps(
+    state: &State,
+    table: &[MoveSet],
+) -> Vec<Vec<PlainStep>> {
+    let board_size = state.statics.board_size;
+    let files = state.statics.files as i32;
+
+    if board_size > 128 {
+        return Vec::new();
+    }
+
+    table.iter().enumerate().map(|(entry, vectors)| {
+        let piece = &state.statics.pieces[entry / board_size];
+        let origin = (entry % board_size) as i32;
+        let sign = -2 * p_color!(piece) as i32 + 1;
+        let promotable = promotions!(state) && p_can_promote!(piece);
+
+        vectors.iter().map(|vector| {
+            let count = vector.legs.len();
+            let mut square = origin;
+            let mut path = 0u128;
+            let mut plain = !promotable && vector.pattern.is_none()
+                && count > 0;
+
+            for (index, &leg) in vector.legs.iter().enumerate() {
+                let last = index + 1 == count;
+                let (file, rank) = (x!(leg) as i32, y!(leg) as i32);
+                let flags = match last {
+                    true => 18,                                                 /* the last leg: `m` and `c` only     */
+                    false => 17,                                                /* an inner leg: `m` only             */
+                };
+
+                square += (rank * files + file) * sign;
+                plain &= (file, rank) != (0, 0) && square != origin
+                    && leg >> flags == 0;
+
+                if !last {
+                    path |= 1u128 << square;
+                }
+            }
+
+            let last = vector.legs.last().copied().unwrap_or(0);
+            let quiet = m!(last) || !c!(last) && !d!(last);
+            let capture = c!(last) || !m!(last);
+            let kind = (quiet as u8 | (capture as u8) << 1) * plain as u8;
+
+            (path, square as Square, kind)
+        }).collect()
+    }).collect()
+}
+
 /// generate_attack_masks
 ///
 /// Collects the `relevant_attacks` entries from one origin square. For
@@ -1795,10 +1867,16 @@ macro_rules! process_multi_leg_vector {
 /// - `relevant_moves`    : full pseudo-legal move list
 /// - `relevant_captures` : capture list
 ///
+/// A vector with a plain step of kind 1 to 3 (see [`PlainStep`]) is not
+/// walked: its inner squares and end square give the move, encoded as the
+/// walk would. Without a row of steps (a board past 128 squares) each
+/// vector walks.
+///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
 /// - piece       : &Piece         -> moving piece type
 /// - vector_set  : &MoveSet       -> compiled vectors to expand
+/// - plain       : &[PlainStep]   -> the steps of the vectors, or none
 /// - state       : &State         -> current position
 /// - out         : &mut Vec<Move> -> list that gets the moves
 /// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
@@ -1806,14 +1884,68 @@ macro_rules! process_multi_leg_vector {
 #[macro_export]
 macro_rules! generate_move_list_from_vectors {
     (
-        $square_index:expr, $piece:expr, $vector_set:expr,
+        $square_index:expr, $piece:expr, $vector_set:expr, $plain:expr,
         $state:expr, $out:expr, $scratch:expr
     ) => {{
-        for multi_leg_vector in $vector_set {
-            process_multi_leg_vector!(
-                $square_index, $piece, multi_leg_vector,
-                $state, $out, $scratch
+        let plain: &[PlainStep] = $plain;
+        let color = p_color!($piece) as usize;
+        let board = |side: usize| {
+            $state.pieces_board[side].2[0] as u128
+                | ($state.pieces_board[side].2[1] as u128) << 64
+        };
+        let (own, enemy) = match plain.is_empty() {
+            true => (0, 0),
+            false => (board(color), board(1 - color)),
+        };
+
+        for (index, multi_leg_vector) in $vector_set.iter().enumerate() {
+            let (path, end, kind) = plain.get(index).copied()
+                .unwrap_or((0, 0, 0));
+
+            if kind == 0 {
+                process_multi_leg_vector!(
+                    $square_index, $piece, multi_leg_vector,
+                    $state, $out, $scratch
+                );
+                continue;
+            }
+
+            let taken = enemy >> end & 1 == 1;
+
+            if path & (own | enemy) != 0
+                || own >> end & 1 == 1
+                || kind >> taken as u8 & 1 == 0                                 /* bit 0 a move, bit 1 a capture      */
+            {
+                continue;
+            }
+
+            let mut encoded_move = Move::default();
+
+            enc_start!(encoded_move, $square_index as u128);
+            enc_piece!(encoded_move, p_index!($piece) as u128);
+            enc_is_initial!(
+                encoded_move,
+                get!($state.virgin_board, $square_index as u32) as u128
             );
+            enc_end!(encoded_move, end as u128);
+
+            if taken {
+                let mut taken_piece = 0u64;
+
+                enc_multi_move_captured_piece!(
+                    taken_piece, $state.main_board[end as usize] as u64
+                );
+                enc_multi_move_captured_square!(taken_piece, end as u64);
+                enc_multi_move_captured_unmoved!(
+                    taken_piece, get!($state.virgin_board, end as u32) as u64
+                );
+                enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
+                enc_capture_part!(encoded_move, taken_piece as u128);
+            } else {
+                enc_move_type!(encoded_move, QUIET_MOVE);
+            }
+
+            $out.push(encoded_move);
         }
     }};
 }
@@ -1837,12 +1969,13 @@ macro_rules! generate_move_list {
     ) => {{
         let piece_index = p_index!($piece) as usize;
         let board_size = $state.statics.board_size;
-        let vector_set =
-            &$state.statics.relevant_moves
-                [piece_index * board_size + $square_index as usize];
+        let entry = piece_index * board_size + $square_index as usize;
+        let vector_set = &$state.statics.relevant_moves[entry];
+        let plain = $state.statics.plain_moves.get(entry)
+            .map_or(&[][..], |row| &row[..]);
 
         generate_move_list_from_vectors!(
-            $square_index, $piece, vector_set, $state, $out, $scratch
+            $square_index, $piece, vector_set, plain, $state, $out, $scratch
         )
     }};
 }
@@ -1872,13 +2005,14 @@ macro_rules! generate_capture_list {
     ) => {{
         let piece_index = p_index!($piece) as usize;
         let board_size = $state.statics.board_size;
-        let vector_set =
-            &$state.statics.relevant_captures
-                [piece_index * board_size + $square_index as usize];
+        let entry = piece_index * board_size + $square_index as usize;
+        let vector_set = &$state.statics.relevant_captures[entry];
+        let plain = $state.statics.plain_captures.get(entry)
+            .map_or(&[][..], |row| &row[..]);
 
         let start = $out.len();
         generate_move_list_from_vectors!(
-            $square_index, $piece, vector_set, $state, $out, $scratch
+            $square_index, $piece, vector_set, plain, $state, $out, $scratch
         );
 
         retain_captures!($out, start, true);

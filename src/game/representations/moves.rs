@@ -30,6 +30,19 @@ use crate::*;
 ///
 pub type AttackMask = (PieceIndex, Square, MoveVector);
 
+/// PlainStep
+///
+/// The mask form of one move vector from one origin: `(inner squares, end
+/// square, kind)`. The move is legal when no inner square is occupied and
+/// the end square holds no own piece. The kind tells what the end allows:
+///
+/// - 0 : not plain, the vector walks its legs
+/// - 1 : a move to an empty end square
+/// - 2 : a capture of an enemy piece on the end square
+/// - 3 : both
+///
+pub type PlainStep = (u128, Square, u8);
+
 /// MoveSignature
 ///
 /// The XOR of all `u64` entries in `Move.1`. The hash table stores it as a

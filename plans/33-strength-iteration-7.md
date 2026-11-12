@@ -3435,6 +3435,24 @@ round a (FSF's phase from its xiangqi values):
   the move. Plain vectors get a path mask and their move is built in
   place; the rest walk as before, in the same order. Boards of up to 128
   squares only (two words); larger boards keep the walk.
+- S3 as planned is not exact: the evaluation's maps do not test move
+  conditions, so they hold more targets than the attacks, and a check
+  test read from them could differ. It is set again after S2.
+- plainpath (`plan33-plainpath`, from build 47): `generate_plain_steps`
+  gives a `PlainStep` row beside each `relevant_moves` and
+  `relevant_captures` entry; `generate_move_list_from_vectors!` builds a
+  plain vector's move in place, encoded as the walk does.
+- Exact: perft at depth 4 the same in standard, grand, crazyhouse, koth,
+  threecheck, xiangqi, shogi and capablanca; seeded nodes the same in
+  the 39 variants of up to 128 squares; chushogi and tjatoer (over 128,
+  no rows) the same perft. The full 44-variant run was stopped by the
+  memory reaper during taikyoku's search (near 10 GB); the five boards
+  over 128 squares have no rows and walk as before.
+- Faster: seeded benches (medians of five alternating runs) grand
+  x0.847, crazyhouse x0.907, xiangqi x0.923, shogi x0.983, standard
+  x0.996 (bare endings); nodes a second on 12 middle games at 1 s, two
+  passes, standard +9%, koth +8%, threecheck +12%.
+- Merged on speed as build 48.
 
 ### Grand's falls, and a repetition before the root
 

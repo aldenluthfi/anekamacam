@@ -747,6 +747,8 @@ pub struct StaticState {
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
+    pub plain_moves: Vec<Vec<PlainStep>>,                                       /* mask form of `relevant_moves`      */
+    pub plain_captures: Vec<Vec<PlainStep>>,                                    /* mask form of `relevant_captures`   */
     pub capture_reach: Vec<u64>,                                                /* piece, square to capture leg reach */
     pub capture_destroys: Vec<bool>,                                            /* piece to an own-piece capture leg  */
     pub royal_reach: Vec<u64>,                                                  /* side, royal square to attack reads */
@@ -1066,6 +1068,8 @@ impl State {
 
             relevant_moves: vec![MoveSet::new(); board_size * piece_count],
             relevant_captures: vec![MoveSet::new(); board_size * piece_count],
+            plain_moves: Vec::new(),
+            plain_captures: Vec::new(),
             capture_reach: Vec::new(),
             capture_destroys: vec![false; piece_count],
             royal_reach: Vec::new(),
@@ -1462,6 +1466,13 @@ impl State {
         let captures =
             self.populate_relevant(&piece_moves, generate_relevant_captures);
         self.static_mut().relevant_captures = captures;
+
+        let plain_moves =
+            generate_plain_steps(self, &self.statics.relevant_moves);
+        let plain_captures =
+            generate_plain_steps(self, &self.statics.relevant_captures);
+        self.static_mut().plain_moves = plain_moves;
+        self.static_mut().plain_captures = plain_captures;
 
         if drops!(self) {
             let drops =
