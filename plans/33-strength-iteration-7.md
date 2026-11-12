@@ -3499,6 +3499,26 @@ round a (FSF's phase from its xiangqi values):
   in one bit whether a piece on a square attacks the target; the piece
   lists give the near 40 pieces of a grand middle game; an entry is
   read only for a hit, through an index from start to its run.
+- attackindex (reverted): that form, exact (perft at depth 4 in eight
+  variants, the suite, seeded nodes the same in the 39 variants). Mean
+  entries a square: 58.8 in the 8 by 8 chess family, 109.6 crazyhouse,
+  113.9 grand, 159.4 xiangqi, 101.6 shogi, 102.2 capablanca; start
+  armies 32 to 40 (horde 52). With the walk only past twice the army
+  (standard, koth, threecheck and horde keep the list), fixed-depth
+  searches on 8 middle games, five alternating passes: grand x0.986,
+  crazyhouse x0.991. One bench run before the gate showed x0.933 in
+  grand; it did not repeat.
+- Climbing back: C held (the count of entries is the cost), but the
+  walk's own reads, a row of `royal_lines` for each piece type and the
+  piece lists, with branches that do not predict, cost near what the
+  106 compares in a row cost. The check test is closed for this design:
+  a cheaper one needs attack maps that the move rules make exact, which
+  is the evaluation's map with the move conditions tested (S3).
+- Anomaly, chased: the same work timed 3.46 s in a first pass and 4.3
+  to 5.0 s after (grand, both binaries). No other process ran; the
+  processor reads 2904 MHz idle, so the clock falls under a long load.
+  Alternating passes keep the medians fair, but the resolution is near
+  3%, so a speed stage must show more than that.
 
 ### Grand's falls, and a repetition before the root
 

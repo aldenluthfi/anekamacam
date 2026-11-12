@@ -627,8 +627,10 @@ pub fn generate_relevant_captures(
 /// - table: &[MoveSet] -> `relevant_moves` or `relevant_captures`
 ///
 /// Return:
-/// Vec<Vec<PlainStep>> -> one row for each table entry, or none past 128
-///                        squares, where a mask needs more than two words
+/// Vec<Vec<PlainStep>> -> one row for each table entry, none past 128 squares
+///
+/// Notes:
+/// A mask past 128 squares needs more than two words.
 ///
 pub fn generate_plain_steps(
     state: &State,
@@ -1867,10 +1869,9 @@ macro_rules! process_multi_leg_vector {
 /// - `relevant_moves`    : full pseudo-legal move list
 /// - `relevant_captures` : capture list
 ///
-/// A vector with a plain step of kind 1 to 3 (see [`PlainStep`]) is not
-/// walked: its inner squares and end square give the move, encoded as the
-/// walk would. Without a row of steps (a board past 128 squares) each
-/// vector walks.
+/// A vector with a plain step of kind 1 to 3 (see [`PlainStep`]) gets its
+/// move from its inner squares and end square, encoded as the walk encodes
+/// it. A table with no rows (a board past 128 squares) walks each vector.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
@@ -1889,13 +1890,13 @@ macro_rules! generate_move_list_from_vectors {
     ) => {{
         let plain: &[PlainStep] = $plain;
         let color = p_color!($piece) as usize;
-        let board = |side: usize| {
+        let occupancy = |side: usize| {
             $state.pieces_board[side].2[0] as u128
                 | ($state.pieces_board[side].2[1] as u128) << 64
         };
         let (own, enemy) = match plain.is_empty() {
             true => (0, 0),
-            false => (board(color), board(1 - color)),
+            false => (occupancy(color), occupancy(1 - color)),
         };
 
         for (index, multi_leg_vector) in $vector_set.iter().enumerate() {
