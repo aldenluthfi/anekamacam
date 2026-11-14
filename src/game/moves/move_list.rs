@@ -614,7 +614,8 @@ pub fn generate_relevant_captures(
 /// Gives the mask form of each vector of a relevant table, entry by entry
 /// and in the same order (see [`PlainStep`]). A vector is plain when:
 ///
-/// - condition : it has no pattern, and its piece cannot promote
+/// - condition : it has no pattern
+/// - promotion : no square of it is in a promotion zone of its piece
 /// - inner legs: they only move (`m`), with no other modifier
 /// - last leg  : it moves, captures or both (`m`, `c`), nothing else
 /// - squares   : no leg ends on the origin, and no leg stays in place
@@ -644,17 +645,27 @@ pub fn generate_plain_steps(
     }
 
     table.iter().enumerate().map(|(entry, vectors)| {
-        let piece = &state.statics.pieces[entry / board_size];
+        let piece_index = entry / board_size;
+        let piece = &state.statics.pieces[piece_index];
         let origin = (entry % board_size) as i32;
         let sign = -2 * p_color!(piece) as i32 + 1;
         let promotable = promotions!(state) && p_can_promote!(piece);
+        let statics = &state.statics;
+        let in_zone = |square: i32| {
+            let mandatory = &statics.promotion_zones_mandatory[piece_index];
+            let optional = &statics.promotion_zones_optional[piece_index];
+
+            promotable && (
+                get!(mandatory, square as u32) || get!(optional, square as u32)
+            )
+        };
 
         vectors.iter().map(|vector| {
             let count = vector.legs.len();
             let mut square = origin;
             let mut path = 0u128;
-            let mut plain = !promotable && vector.pattern.is_none()
-                && count > 0;
+            let mut plain = vector.pattern.is_none() && count > 0
+                && !in_zone(origin);
 
             for (index, &leg) in vector.legs.iter().enumerate() {
                 let last = index + 1 == count;
@@ -666,7 +677,7 @@ pub fn generate_plain_steps(
 
                 square += (rank * files + file) * sign;
                 plain &= (file, rank) != (0, 0) && square != origin
-                    && leg >> flags == 0;
+                    && leg >> flags == 0 && !in_zone(square);
 
                 if !last {
                     path |= 1u128 << square;
