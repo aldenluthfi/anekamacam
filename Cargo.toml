@@ -22,14 +22,8 @@ regex = {
 lazy_static = {
     version = ">=1.5.0"
 }
-timed = {
-    version = ">=0.2.1"
-}
 rand = {
     version = ">=0.9.3"
-}
-fs = {
-    version = ">=0.0.5"
 }
 hotpath = {
     version = ">=0.16.1"

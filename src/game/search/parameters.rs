@@ -2928,8 +2928,7 @@ pub fn derive_danger_parameters(state: &mut State) {
 ///
 /// Sets the goal race of the goal rule:
 ///
-/// - landings : for each goal piece and square, the map of its empty-board
-///   moves
+/// - landings : goal piece and square to the map of its empty-board moves
 /// - value    : the worth of one zone square one move away, doubled
 ///
 /// A vector that needs a screen or only captures cannot move on an empty

@@ -793,14 +793,15 @@ macro_rules! castling_bonus {
 /// - protected passed : a passed pawn with a pawn defender, 1.5 times
 /// - connected passed : a passed pawn with a passed defender, 2 times
 /// - connected        : another own pawn defends it
-/// - pushed           : not passed, in a pawn mass, for each own pawn that
-///   defends it or stands beside it; 40.4% with an enemy pawn on its path
+/// - pushed           : not passed, in a pawn mass, once for each partner
 /// - doubled          : an own pawn is on its path
 /// - isolated         : no own pawn on a file that can defend it
 /// - backward         : a neighbour but no defender, stop square attacked
 ///
 /// A colour with more pawns than `pawn_mass` is a pawn mass, and each of
-/// its pushed pawns gets its progress part too.
+/// its pushed pawns gets its progress part too. A partner is an own pawn
+/// that defends the pawn or stands beside it. With an enemy pawn on its
+/// path, a pushed pawn keeps 40.4%.
 ///
 /// The passed value is a part of the promotion gain for the steps of the
 /// pawn to promotion. Its path and the royals near it are priced in
