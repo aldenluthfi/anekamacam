@@ -2,6 +2,9 @@
 
 ## Status
 
+Closed 2026-11-14 on build 48; plan 34 continues from an audit of this
+plan's work.
+
 Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
 (queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1
 merged as build 35 (queue242); stage 2 (FS) parked near +8 after the
