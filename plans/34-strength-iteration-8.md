@@ -337,10 +337,9 @@ the pause.
 - Form: the mover's square is written in place; a captured piece's
   slot is kept in the snapshot and filled again on undo. Less work than
   now.
-- It changes the trees once, with no expected sign. Proposed rule, as
-  for a correctness fix: not worse (no test variant below -2σ over
-  three rounds) and not slower. The user confirms the rule before the
-  games.
+- It changes the trees once, with no expected sign. Rule, set by the
+  user: better, the strength rule (+2σ on the mean over three rounds
+  of 200, no test variant below -2σ, no forfeits).
 
 ### 3. The exchange on stable lists
 
