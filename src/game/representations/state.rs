@@ -1546,41 +1546,8 @@ impl State {
 
                 reach[target >> 6] |= 1u64 << (target & 63);
 
-                for (piece_index, start, vector) in attacks {
-                    let piece = &statics.pieces[*piece_index as usize];
-                    let sign = -2 * p_color!(piece) as i32 + 1;
-                    let origin = *start as i32;
-                    let units = vector.pattern.iter()
-                        .flat_map(|patterns| patterns.iter())
-                        .flat_map(|(allowers, stoppers)| {
-                            allowers.iter().chain(stoppers.iter())
-                        });
-
-                    let mut mark = |square: i32| {
-                        if square >= 0 && square < board_size as i32 {
-                            reach[square as usize >> 6] |=
-                                1u64 << (square & 63);
-                        }
-                    };
-                    let mut walk = origin;
-                    let mut passing = false;
-
-                    mark(origin);
-
-                    for leg in vector.legs.iter() {
-                        walk += (y!(*leg) as i32 * files + x!(*leg) as i32)
-                            * sign;
-                        passing |= t!(*leg) && walk != target as i32;           /* the leg onto the royal never reads */
-                        mark(walk);                                             /* the en passant square              */
-                    }
-
-                    for (unit, _) in units {
-                        mark(origin
-                            + (y!(*unit) as i32 * files + x!(*unit) as i32)
-                            * sign);
-                    }
-
-                    if passing {
+                for attack in attacks {
+                    if mark_attack_reads(statics, attack, target, reach) {
                         reach.fill(u64::MAX);                                   /* en passant reads a square no move  */
                     }                                                           /* names, so each move tests it       */
                 }

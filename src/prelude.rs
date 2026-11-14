@@ -27,7 +27,7 @@ pub use crate::game::representations::{
     piece::{Piece, PieceIndex},
     state::{
         EnPassantSquare, NodeLists, PawnEntry, Scratch, Snapshot, Square,
-        State,
+        State, StaticState,
     },
     vector::{
         AtomicElement::{self, AtomicEval, AtomicExpr, AtomicTerm},
@@ -56,6 +56,7 @@ pub use crate::game::moves::move_list::{
     derive_attack_recipes, generate_attack_masks, AttackRecipes,
     generate_relevant_captures, generate_relevant_castling,
     generate_relevant_moves, generate_plain_steps,
+    check_squares, mark_attack_reads,
 };
 pub use crate::game::representations::termination::{
     adjudicate_outcome, count_repetitions, counting_limit, counting_progress,

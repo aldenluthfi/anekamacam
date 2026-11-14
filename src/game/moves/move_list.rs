@@ -136,6 +136,130 @@ macro_rules! royal_unreached {
     }};
 }
 
+/// changed_squares!
+///
+/// Gives the squares that a move changes, for a move that keeps each royal
+/// on its square:
+///
+/// - quiet move     : start and end
+/// - single capture : start, end, the captured square and an unload square
+/// - drop           : the drop square
+///
+/// Params:
+/// - state: &State         -> position with the piece types
+/// - mv   : &Move          -> move to read
+///
+/// Return:
+/// Option<[Square; 4]>     -> the squares, then `NO_SQUARE`, or none
+///
+/// Notes:
+/// There is none for a royal that moves, lands by promotion or is taken,
+/// and for a move type that changes other squares.
+///
+#[macro_export]
+macro_rules! changed_squares {
+    ($state:expr, $mv:expr) => {{
+        let changing_move: &Move = $mv;
+        let pieces = &$state.statics.pieces;
+        let move_type = move_type!(changing_move);
+        let start_square = start!(changing_move) as Square;
+        let end_square = end!(changing_move) as Square;
+        let moves_royal =
+            p_is_royal!(pieces[piece!(changing_move) as usize]);
+        let promotes_royal = move_type <= SINGLE_CAPTURE_MOVE                   /* only these two can promote         */
+            && promotion!(changing_move)
+            && p_is_royal!(pieces[promoted!(changing_move) as usize]);
+        let takes_royal = move_type == SINGLE_CAPTURE_MOVE
+            && p_is_royal!(pieces[captured_piece!(changing_move) as usize]);
+
+        match move_type {
+            _ if moves_royal || promotes_royal || takes_royal => None,
+            QUIET_MOVE => Some(
+                [start_square, end_square, NO_SQUARE, NO_SQUARE]
+            ),
+            SINGLE_CAPTURE_MOVE => Some([
+                start_square,
+                end_square,
+                captured_square!(changing_move) as Square,
+                match is_unload!(changing_move) {
+                    true => unload_square!(changing_move) as Square,
+                    false => NO_SQUARE,
+                },
+            ]),
+            DROP_MOVE => Some(
+                [start_square, NO_SQUARE, NO_SQUARE, NO_SQUARE]
+            ),
+            _ => None,
+        }
+    }};
+}
+
+/// leaves_check!
+///
+/// Tells, before a move is made, that it leaves the checking attack of
+/// [`check_squares`] as it is: the move is not a pass, keeps each royal on
+/// its square and changes none of the squares that the attack reads. The
+/// royal stays attacked, so the move is illegal and needs no make.
+///
+/// Params:
+/// - state: &State     -> position in check, before the move
+/// - mv   : &Move      -> move to test
+/// - reads: &BoardBits -> squares that the checking attack reads
+///
+/// Return:
+/// bool                -> true when the move cannot end the check
+///
+#[macro_export]
+macro_rules! leaves_check {
+    ($state:expr, $mv:expr, $reads:expr) => {{
+        let tested_move: &Move = $mv;
+        let reads: &BoardBits = $reads;
+
+        !is_pass!(tested_move)
+            && changed_squares!($state, tested_move).is_some_and(|squares| {
+                squares.iter().all(|&square| {
+                    square == NO_SQUARE
+                    || reads[square as usize >> 6] >> (square & 63) & 1 == 0
+                })
+            })
+    }};
+}
+
+/// unmade_lists!
+///
+/// Leaves the piece lists as a make of the move and its undo leave them:
+/// the square of the mover, and of a piece it captures, goes to the end of
+/// its row. The search calls it for a move that `leaves_check!` skips, so
+/// the order of the lists does not depend on the skip.
+///
+/// Params:
+/// - state: &mut State -> position before the move
+/// - mv   : &Move      -> quiet move, single capture or drop to skip
+///
+#[macro_export]
+macro_rules! unmade_lists {
+    ($state:expr, $mv:expr) => {{
+        let unmade_move: &Move = $mv;
+        let move_type = move_type!(unmade_move);
+
+        if move_type != DROP_MOVE {                                             /* a drop joins and leaves at the end */
+            let mover = piece!(unmade_move) as usize;
+            let start_square = start!(unmade_move) as Square;
+
+            piece_list_remove!($state, mover, start_square);
+            piece_list_push!($state, mover, start_square);
+        }
+
+        if move_type == SINGLE_CAPTURE_MOVE {
+            let captured = captured_piece!(unmade_move) as usize;
+            let captured_square = captured_square!(unmade_move) as Square;
+
+            piece_list_remove!($state, captured, captured_square);
+            piece_list_push!($state, captured, captured_square);
+        }
+    }};
+}
+
 /// royal_line!
 ///
 /// Tells if `$piece` on `$square` has an attack vector onto a royal of
@@ -692,6 +816,117 @@ pub fn generate_plain_steps(
             (path, square as Square, kind)
         }).collect()
     }).collect()
+}
+
+/// mark_attack_reads
+///
+/// Marks each square that the test of one attack entry reads: the start
+/// of the attacker, the end square of each leg and each square of its
+/// condition.
+///
+/// Params:
+/// - statics: &StaticState -> pieces and board dimensions
+/// - attack : &AttackMask  -> attack entry to walk
+/// - target : usize        -> square that the entry attacks
+/// - reads  : &mut [u64]   -> board words that get the squares
+///
+/// Return:
+/// bool                    -> true when a leg reads the en passant square
+///
+/// Notes:
+/// The leg onto the target never reads the en passant square. A leg before
+/// it with `t` can, and that square is one that no move names.
+///
+pub fn mark_attack_reads(
+    statics: &StaticState,
+    attack: &AttackMask,
+    target: usize,
+    reads: &mut [u64],
+) -> bool {
+    let (piece_index, start, vector) = attack;
+    let files = statics.files as i32;
+    let board_size = statics.board_size as i32;
+    let piece = &statics.pieces[*piece_index as usize];
+    let sign = -2 * p_color!(piece) as i32 + 1;
+    let origin = *start as i32;
+    let units = vector.pattern.iter()
+        .flat_map(|patterns| patterns.iter())
+        .flat_map(|(allowers, stoppers)| {
+            allowers.iter().chain(stoppers.iter())
+        });
+
+    let mut mark = |square: i32| {
+        if square >= 0 && square < board_size {
+            reads[square as usize >> 6] |= 1u64 << (square & 63);
+        }
+    };
+    let mut walk = origin;
+    let mut passing = false;
+
+    mark(origin);
+
+    for leg in vector.legs.iter() {
+        walk += (y!(*leg) as i32 * files + x!(*leg) as i32) * sign;
+        passing |= t!(*leg) && walk != target as i32;
+        mark(walk);
+    }
+
+    for (unit, _) in units {
+        mark(origin + (y!(*unit) as i32 * files + x!(*unit) as i32) * sign);
+    }
+
+    passing
+}
+
+/// check_squares
+///
+/// Gives the squares that one attack on the lone royal of `side` reads,
+/// for the first attack entry of the royal square that holds now. A move
+/// of another piece that changes none of them leaves that attack as it
+/// is, so the royal stays attacked.
+///
+/// Params:
+/// - state: &State   -> position to read
+/// - side : u8       -> side of the royal
+///
+/// Return:
+/// Option<BoardBits> -> the squares, or none when no attack names them
+///
+/// Notes:
+/// There is none without a lone royal, without an attack that holds, and
+/// for an attack that reads the en passant square.
+///
+pub fn check_squares(state: &State, side: u8) -> Option<BoardBits> {
+    let statics = &state.statics;
+    let [royal] = state.royal_list[side as usize][..] else {
+        return None;
+    };
+    let royal_piece = state.main_board[royal as usize];
+    let royal_rank = p_rank!(statics.pieces[royal_piece as usize]);
+    let royal_unmoved = get!(state.virgin_board, royal as u32);
+    let attack = statics.relevant_attacks[side as usize][royal as usize]
+        .iter()
+        .find(|(piece_index, start, vector)| {
+            state.main_board[*start as usize] == *piece_index
+                && validate_attack_vector!(
+                    vector,
+                    *start,
+                    &statics.pieces[*piece_index as usize],
+                    royal_unmoved,
+                    true,
+                    royal_rank,
+                    royal as u32,
+                    state
+                )
+        })?;
+    let mut reads = [0u64; BOARD_WORDS];
+
+    reads[royal as usize >> 6] |= 1u64 << (royal & 63);
+
+    match mark_attack_reads(statics, attack, royal as usize, &mut reads) {
+        true => None,
+        false => Some(reads),
+    }
 }
 
 /// generate_attack_masks
@@ -3491,37 +3726,11 @@ macro_rules! make_move {
             let this_player = $state.playing;
             let next_player = 1 - this_player;
 
-            let pieces = &$state.statics.pieces;
-            let start_square = start!(applied_move) as Square;
-            let end_square = end!(applied_move) as Square;
-            let moves_royal = p_is_royal!(pieces[piece_index]);
-            let promotes_royal = move_type <= SINGLE_CAPTURE_MOVE               /* only these two can promote         */
-                && promotion!(applied_move)
-                && p_is_royal!(pieces[promoted!(applied_move) as usize]);
-            let takes_royal = move_type == SINGLE_CAPTURE_MOVE
-                && p_is_royal!(pieces[captured_piece!(applied_move) as usize]);
-            let royals_stay = !moves_royal && !promotes_royal && !takes_royal
-                && last_game_phase != SETUP                                     /* the setup phase has no checks, so  */
+            let played = last_game_phase != SETUP                               /* the setup phase has no checks, so  */
                 && $state.game_phase != SETUP;                                  /* its end is a change of its own     */
-
-            let changed_squares = match move_type {
-                _ if !royals_stay => None,
-                QUIET_MOVE => Some(
-                    [start_square, end_square, NO_SQUARE, NO_SQUARE]
-                ),
-                SINGLE_CAPTURE_MOVE => Some([
-                    start_square,
-                    end_square,
-                    captured_square!(applied_move) as Square,
-                    match is_unload!(applied_move) {
-                        true => unload_square!(applied_move) as Square,
-                        false => NO_SQUARE,
-                    },
-                ]),
-                DROP_MOVE => Some(
-                    [start_square, NO_SQUARE, NO_SQUARE, NO_SQUARE]
-                ),
-                _ => None,
+            let changed_squares = match played {
+                true => changed_squares!($state, &applied_move),
+                false => None,
             };
 
             let last = $state.history.last();

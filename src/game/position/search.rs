@@ -864,6 +864,10 @@ pub fn quiescence_search(
     let NodeLists { moves, scores, payload, .. } = &mut lists;
 
     let checks_wanted = quiet_checks && !in_check && stand_pat >= alpha;        /* a side behind wants captures       */
+    let checking = match in_check {                                             /* a move that leaves the checking    */
+        true => check_squares(state, state.playing),                            /* attack as it is needs no make      */
+        false => None,
+    };
 
     if in_check || checks_wanted {
         generate_all_moves_and_drops(state, moves, payload);
@@ -911,6 +915,13 @@ pub fn quiescence_search(
         && delta_prunable
         && !m_promotion!(&moves[index])
         && stand_pat + victim_value!(&moves[index], state) + delta <= alpha {
+            continue;
+        }
+
+        if checking.as_ref()
+            .is_some_and(|reads| leaves_check!(state, &moves[index], reads))
+        {
+            unmade_lists!(state, &moves[index]);
             continue;
         }
 
@@ -1338,6 +1349,10 @@ pub fn alpha_beta(
     let hand_held = drops!(state)                                               /* checks are common, so the check    */
         && state.piece_in_hand[state.playing as usize]                          /* rule gives way                     */
             .iter().any(|&count| count > 0);
+    let checking = match in_check {                                             /* a move that leaves the checking    */
+        true => check_squares(state, state.playing),                            /* attack as it is needs no make      */
+        false => None,
+    };
 
     if drops_pending
     && table_move.is_some_and(|table_move| {                                    /* a table move that drops needs the  */
@@ -1441,6 +1456,13 @@ pub fn alpha_beta(
             enemy, piece!(mv) as usize, end!(mv) as usize, state                /* a royal: it cannot check directly  */
         )
         {
+            continue;
+        }
+
+        if checking.as_ref()
+            .is_some_and(|reads| leaves_check!(state, mv, reads))
+        {
+            unmade_lists!(state, mv);
             continue;
         }
 
