@@ -6,9 +6,11 @@ Opened 2026-11-14 on build 48 (main 9791d0c), after an audit the user
 asked for: the work so far, the style of code and comments, and a
 profile run of build 48. The audit's quick fixes are done: the style
 fixes, a display fix, and plainzone, merged on speed as build 49 (main
-66a6ccd). The bigger jobs are the stages below. The test opponent is FSF
-classical at `UCI_Elo` 2100. Plan 33 is the ledger of builds 34 to 48;
-plan 29 of the earlier tries.
+66a6ccd). The bigger jobs are the stages below. Stage 1, the evasion
+skip, merged on speed as build 50 (main e3e3142; crazyhouse x0.912).
+Build 50's sweep against FSF 2100 runs; the work pauses after it. The
+test opponent is FSF classical at `UCI_Elo` 2100. Plan 33 is the ledger
+of builds 34 to 48; plan 29 of the earlier tries.
 
 ## Context
 
@@ -283,6 +285,47 @@ the pause.
   large-board perft; the makes for each node fall by the "illegal, at
   a node in check" row. Expected: 5% (standard, grand, koth,
   threecheck) to 15% (crazyhouse) of the time.
+- Built (`plan34-evasion`, from build 49): `check_squares` finds the
+  first attack on the lone royal that holds and marks its squares with
+  `mark_attack_reads`, which the reach derivation of LG now calls too;
+  `changed_squares!` is the one form of a move's squares, for
+  `make_move!` and for `leaves_check!`; the two move loops skip a move
+  that `leaves_check!` names.
+- Anomaly, chased: the first form changed the trees (crazyhouse bench
+  442555 to 375447) with every perft the same. Cause: a make and its
+  undo leave the mover, and a piece it captures, at the end of their
+  piece list, an illegal make too; the skip left that out, and the
+  later generation order moved (stage 2's cause). `unmade_lists!`
+  moves the same squares to the end of their rows for a skipped move,
+  and the nodes are build 49's again. It goes when stage 2 makes an
+  undo restore the lists.
+- Exact: seeded nodes the same in the 39 variants; perft the same on
+  chushogi and tjatoer; perft at depth 4 the same in five variants and
+  the four perft suites pass (the `make_move!` change); the same nodes
+  on the 40 middle games below. A skipped legal move would take its
+  node out of a count, so the equal counts also show that no legal move
+  was skipped.
+- Speed against build 49, the 8 middle games of each variant to a
+  fixed depth, seven alternating passes (median of the pair ratios, and
+  their range):
+
+| Variant | Time | Range |
+|---------|-----:|-------|
+| crazyhouse | x0.912 | 0.886 to 0.918 |
+| grand | x0.974 | 0.951 to 0.996 |
+| standard | x0.980 | 0.948 to 1.007 |
+| koth | x0.982 | 0.954 to 1.004 |
+| threecheck | x0.985 | 0.957 to 1.004 |
+
+- Under the expected 5% outside crazyhouse: a skipped move is still
+  picked (its scan, and the exchange of a capture), and an illegal make
+  was cheaper than a make that goes on to a node. Merged on speed as
+  build 50 (main e3e3142).
+
+### Build 50 against FSF 2100, all variants (400 games each)
+
+- `~/aneka-q/sweep.sh b50 2100`, started after the merge. The table
+  goes here; then the work pauses for the user.
 
 ### 2. listrestore: an undo restores the piece lists
 
