@@ -630,10 +630,9 @@ pub fn iterative_deepening(
         total_elapsed = ENGINE_START
             .elapsed()
             .as_nanos()
-            .saturating_sub(start_time)
-            .checked_div(1_000_000)
-            .unwrap_or(0);
+            .saturating_sub(start_time);
 
+        let total_millis = total_elapsed / 1_000_000;
         let depth_nodes = info.nodes - depth_start_nodes;
         total_nodes = info.nodes;
 
@@ -643,7 +642,7 @@ pub fn iterative_deepening(
             .unwrap_or(0);
         let total_nps = total_nodes
             .checked_mul(1_000)
-            .and_then(|nodes| nodes.checked_div(total_elapsed))
+            .and_then(|nodes| nodes.checked_div(total_millis))
             .unwrap_or(0);
 
         let pv_line = info.pv_line
@@ -695,7 +694,7 @@ pub fn iterative_deepening(
                 depth,
                 score,
                 nodes: total_nodes,
-                time_ms: total_elapsed,
+                time_ms: total_millis,
                 nps: total_nps,
                 pv: pv_line,
             });
