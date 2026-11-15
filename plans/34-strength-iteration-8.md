@@ -8,9 +8,11 @@ profile run of build 48. The audit's quick fixes are done: the style
 fixes, a display fix, and plainzone, merged on speed as build 49 (main
 66a6ccd). The bigger jobs are the stages below. Stage 1, the evasion
 skip, merged on speed as build 50 (main e3e3142; crazyhouse x0.912).
-Build 50's sweep against FSF 2100 runs; the work pauses after it. The
-test opponent is FSF classical at `UCI_Elo` 2100. Plan 33 is the ledger
-of builds 34 to 48; plan 29 of the earlier tries.
+Build 50's sweep against FSF 2100 is done: 22 of 32 valid variants are
+at or above it, and the baseline stays. The work is paused for the
+user since 2026-11-15. The test opponent is FSF classical at `UCI_Elo`
+2100. Plan 33 is the ledger of builds 34 to 48; plan 29 of the earlier
+tries.
 
 ## Context
 
@@ -33,13 +35,16 @@ Build 47 against FSF 2100, main's rounds of 200 in queues 301 to 307:
 | Variant | Rounds | Mean |
 |---------|-------:|-----:|
 | crazyhouse | 9 | -110.4 |
-| threecheck | 3 | -79.2 |
-| grand | 3 | -50.9 |
-| koth | 5 | -39.9 |
+| threecheck | 5 | -69.6 |
+| grand | 5 | -56.6 |
+| koth | 7 | -43.6 |
 | shogi | 2 | -4.4 |
-| standard | 5 | +180.2 |
+| standard | 7 | +184.4 |
 
-Build 48 has not played. Stage 0 plays the base rounds.
+Build 48 has not played. Stage 0 plays the base rounds. (Corrected
+2026-11-15: the table counts every full round of main in those queues;
+it first left out rounds of threecheck, grand, koth and standard and
+gave -79.2, -50.9, -39.9 and +180.2.)
 
 ### What plan 33 showed
 
@@ -324,8 +329,67 @@ the pause.
 
 ### Build 50 against FSF 2100, all variants (400 games each)
 
-- `~/aneka-q/sweep.sh b50 2100`, started after the merge. The table
-  goes here; then the work pauses for the user.
+- `~/aneka-q/sweep.sh b50 2100`, 36 variants, 2026-11-14 to 2026-11-15.
+  Our engine forfeited no game. ± is the 95% bound; the change is
+  against build 40's sweep (plan 33).
+
+| Variant | Build 50 | ± | Build 40 | Change |
+|---------|---------:|--:|---------:|-------:|
+| shatranj | +332.2 | 43.9 | +356.6 | -24.4 |
+| asean | +326.4 | 35.8 | +278.5 | +47.9 |
+| amazon | +310.0 | 48.0 | +209.9 | +100.1 |
+| los-alamos | +259.0 | 38.9 | +181.7 | +77.3 |
+| almost | +242.2 | 42.4 | +143.1 | +99.1 |
+| pocketknight | +200.2 | 38.6 | +149.3 | +50.9 |
+| standard | +192.0 | 37.0 | +153.4 | +38.6 |
+| ai-wok | +185.1 | 37.4 | +156.6 | +28.5 |
+| makruk | +179.5 | 24.7 | +170.6 | +8.9 |
+| kinglet | +171.7 | 36.7 | +100.9 | +70.8 |
+| knightmate | +151.3 | 37.8 | +58.7 | +92.6 |
+| minixiangqi | +148.2 | 34.5 | +113.3 | +34.9 |
+| modern | +123.0 | 33.3 | +48.1 | +74.9 |
+| xiangqi | +119.1 | 36.5 | +49.0 | +70.1 |
+| minishogi | +111.4 | 31.5 | +124.0 | -12.6 |
+| chancellor | +100.0 | 30.6 | +58.7 | +41.3 |
+| hoppelpoppel | +80.4 | 33.8 | +25.2 | +55.2 |
+| fivecheck | +42.8 | 35.3 | -75.0 | +117.8 |
+| janus | +38.4 | 32.7 | +4.3 | +34.1 |
+| judkins | +35.7 | 33.8 | +11.3 | +24.4 |
+| embassy | +28.7 | 31.8 | +1.7 | +27.0 |
+| newzealand | +8.7 | 32.3 | -6.9 | +15.6 |
+| extinction | -0.9 | 32.8 | -20.0 | +19.1 |
+| gothic | -3.5 | 33.1 | -21.7 | +18.2 |
+| capablanca | -6.9 | 32.5 | -31.4 | +24.5 |
+| euroshogi | -13.0 | 33.9 | -34.9 | +21.9 |
+| grand | -13.9 | 31.4 | -82.3 | +68.4 |
+| threecheck | -19.1 | 30.3 | -123.0 | +103.9 |
+| koth | -20.0 | 32.4 | -118.1 | +98.1 |
+| shogi | -23.5 | 31.9 | -52.5 | +29.0 |
+| horde | -37.5 | 19.2 | -52.5 | +15.0 |
+| crazyhouse | -125.0 | 35.5 | -143.1 | +18.1 |
+
+- Not valid (FSF forfeits from the known rule differences): chigorin
+  +171.7 (36), janggi (all 400), ouk-chaktrang +186.2 (54 illegal, 2
+  time), sittuyin +169.5 (204). Shatranj counts 137 FSF forfeits and
+  stands, as in build 40's sweep.
+- 22 of 32 valid variants at or above 2100, 10 below (build 40: 20 and
+  12). The baseline stays 2100.
+- Only crazyhouse and horde are below by more than their bound; the
+  other eight are within it.
+- 30 of 32 rose against build 40: mean +46.5, median +36.7. The two
+  drops, shatranj -24.4 and minishogi -12.6, are within the bounds.
+- The weakest: crazyhouse, horde, shogi, koth, threecheck; then grand
+  and euroshogi.
+- Open anomaly: threecheck and grand stand above build 47's rounds by
+  more than noise, with only the speed merges of builds 48 to 50
+  between (a few percent each). Threecheck: -69.6 over five rounds
+  against -19.1, +50.5 (+2.7σ), and each of the five rounds is below
+  the sweep. Grand: -56.6 over five rounds against -13.9, +42.7
+  (+2.2σ). Crazyhouse (-0.7σ), koth (+1.2σ), shogi (-0.8σ) and standard
+  (+0.4σ) agree with their rounds. The cause is not known. Stage 0's
+  base rounds of build 50 come first after the pause and show whether
+  it holds.
+- The work is paused for the user; nothing is queued.
 
 ### 2. listrestore: an undo restores the piece lists
 
