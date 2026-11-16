@@ -69,7 +69,8 @@ const TAB_FOCUS_LOGS: usize = 2;
 
 /// TUI construction macros
 ///
-/// Widget macros of the debug console, private to this file.
+/// Widget macros of the debug console. `physical.rs` also uses the first
+/// two.
 ///
 /// - `split_area!`   : divides one rect into parts
 /// - `padded_block!` : the frame of a pane
@@ -112,6 +113,7 @@ const TAB_FOCUS_LOGS: usize = 2;
 ///   Return:
 ///   Paragraph<'_> -> the label, boxed or centered
 ///
+#[macro_export]
 macro_rules! split_area {
     ($direction:ident, $area:expr, $constraints:expr) => {
         Layout::default()
@@ -128,6 +130,7 @@ macro_rules! split_area {
     };
 }
 
+#[macro_export]
 macro_rules! padded_block {
     () => {
         Block::default()
@@ -801,7 +804,7 @@ impl OverviewState {
 ///
 pub struct BoardState {
     board: String,                                                              /* composite board diagram            */
-    move_history: String,                                                       /* numbered move history              */
+    pub move_history: String,                                                   /* numbered move history              */
     details: Vec<[String; 2]>,                                                  /* label/value detail rows            */
     fen: String,                                                                /* current position FEN               */
 }
@@ -820,7 +823,8 @@ impl BoardState {
     /// - En Passant       : only with en passant
     /// - Halfmove Clock   : only with a counter, as clock of limit
     /// - Repetition Count : only with repetition, as count of limit
-    /// - Pieces in Hand   : only with drops, captured promotion or setup
+    /// - White Hand       : only with drops, captured promotion or setup
+    /// - Black Hand       : with the White hand
     ///
     /// Params:
     /// - state: &State              -> position to draw
@@ -842,7 +846,6 @@ impl BoardState {
 
         let halfmove_clock;
         let repetition_count;
-        let hand_info;
 
         details.push(["Game Phase".to_string(), phase]);
 
@@ -892,12 +895,8 @@ impl BoardState {
         if drops!(state)
         || promote_to_captured!(state)
         || setup_phase!(state) {
-            hand_info = format!(
-                "White [{}] | Black [{}]\n",
-                format_hand(state, WHITE),
-                format_hand(state, BLACK)
-            );
-            details.push(["Pieces in Hand".to_string(), hand_info]);
+            details.push(["White Hand".to_string(), format_hand(state, WHITE)]);
+            details.push(["Black Hand".to_string(), format_hand(state, BLACK)]);
         }
 
         Self {
@@ -1103,17 +1102,7 @@ fn draw_game_selection(
     let layout = split_area!(Horizontal, area,
         [Constraint::Percentage(25), Constraint::Fill(1)]);
 
-    let mut config_files: Vec<String> = EMBEDDED_CONFIGS
-        .files()
-        .filter_map(|f| {
-            let name = f.path().file_name()?.to_str()?;
-            if name.starts_with("example") {
-                return None;
-            }
-            Some(name.to_string())
-        })
-        .collect();
-    config_files.sort();
+    let config_files = variant_configs();
 
     let previews = config_files
         .iter()

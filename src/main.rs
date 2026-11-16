@@ -76,7 +76,7 @@ pub mod game {
 /// - piece_io  : piece colour pairs and packed piece values
 /// - game_io   : configuration files, parameters, FEN, state display
 /// - move_io   : move and drop notation
-/// - protocols : session loop, protocol dialects and notation dictionaries
+/// - protocols : session loop, protocol dialects, dictionaries, robot link
 /// - logger    : log output for all modes
 ///
 pub mod io {
@@ -92,6 +92,8 @@ pub mod io {
         pub mod uci;
         pub mod usi;
         pub mod ucci;
+
+        pub mod cep;
     }
 
     pub mod logger;
@@ -99,11 +101,12 @@ pub mod io {
 
 /// debug
 ///
-/// Tools that are not part of game play. Two tools let a person control
+/// Tools that are not part of game play. Three tools let a person control
 /// the engine. Three tools make and test the engine parameters.
 ///
 /// - graphics : ratatui console with a board and diagnostics
 /// - headless : the same commands without a screen
+/// - physical : knob and button console of the chess robot
 /// - datagen  : self-play games written as training positions
 /// - sprt     : match between two builds until one is better
 /// - tuning   : fit of evaluation parameters to training positions
@@ -111,6 +114,7 @@ pub mod io {
 pub mod debug {
     pub mod graphics;
     pub mod headless;
+    pub mod physical;
 
     pub mod datagen;
     pub mod sprt;
@@ -135,6 +139,7 @@ pub mod prelude;
 ///
 /// - `debug-graphics` : interactive console, with the debug flag set
 /// - `debug-headless` : the same tools without a screen, rest is a command
+/// - `debug-physical` : robot console, the next argument is the CEP device
 /// - other or none    : protocol loop, the normal mode
 ///
 /// Notes:
@@ -154,6 +159,9 @@ fn main() {
         }
         Some("debug-headless") => {
             with_stdout_sink(|| run_debug_headless(&arguments[2..]));
+        }
+        Some("debug-physical") => {
+            let _ = run_debug_physical(arguments.get(2).map(String::as_str));
         }
         _ => {
             let _ = run();

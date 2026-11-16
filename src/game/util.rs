@@ -83,6 +83,31 @@ pub fn load_variant(variant: &str) -> Result<State, String> {
     Ok(parse_config_file(&config_name))
 }
 
+/// variant_configs
+///
+/// Lists the embedded variant configurations by file name, sorted. The
+/// example configuration documents the schema and is not a variant, so the
+/// list does not have it.
+///
+/// Return:
+/// Vec<String> -> sorted configuration file names
+///
+pub fn variant_configs() -> Vec<String> {
+    let mut config_files: Vec<String> = EMBEDDED_CONFIGS
+        .files()
+        .filter_map(|config| {
+            let name = config.path().file_name()?.to_str()?;
+            if name.starts_with("example") {
+                return None;
+            }
+            Some(name.to_string())
+        })
+        .collect();
+    config_files.sort();
+
+    config_files
+}
+
 /// exe_tag
 ///
 /// Gives the file name of the running binary. Each search thread has it in

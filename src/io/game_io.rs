@@ -593,6 +593,31 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
     (title, board_str)
  }
 
+/// parse_config_board
+///
+/// Reads only the title and the start placement of a config, the board
+/// field of its FEN. It reads the general section and builds no state, so
+/// a list of all variants loads fast.
+///
+/// Params:
+/// - path: &str       -> config file name in the embedded configs
+///
+/// Return:
+/// (String, String)   -> the variant title and the start placement
+///
+pub fn parse_config_board(path: &str) -> (String, String) {
+    let sections = split_sections(&config_text(path));
+
+    let title = sections["general"][0].trim().to_string();
+    let placement = sections["general"][1]
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+    (title, placement)
+}
+
 /// config_text
 ///
 /// Reads a config. The embedded copy comes first, so a released binary

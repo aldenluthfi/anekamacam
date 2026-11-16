@@ -100,7 +100,8 @@ pub use crate::game::util::{
     exe_tag, format_time, game_result_score,
     load_variant, parse_perft_content, parse_number, perft,
     play_search_game, prune_backups, random_u128, refresh_eval_state,
-    roll_latest, run_derive_headless, square_distance, verify_game_state,
+    roll_latest, run_derive_headless, square_distance, variant_configs,
+    verify_game_state,
 };
 
 /*----------------------------------------------------------------------------*\
@@ -116,7 +117,7 @@ pub use crate::io::game_io::{
     format_en_passant_square, format_fen, format_game_phase, format_game_result,
     format_game_state, format_hand, format_position_hash,
     format_search_keys, format_special_rules,
-    parse_config_file,
+    parse_config_board, parse_config_file,
     parse_config_preview, parse_fen, parse_tuned_parameters, split_sections
 };
 pub use crate::io::logger::{
@@ -127,6 +128,10 @@ pub use crate::io::piece_io::{
     collect_piece_type_pairs, set_piece_dynamic_parameters
 };
 pub use crate::io::protocols::{
+    cep::{
+        parse_placement, CepLink, CepReply, CepRequest, Panel, SquareChange,
+        CEP_EMPTY, CEP_OCCUPIED,
+    },
     translation::Translator,
     protocol::{
         find_protocol, Protocol, Session, run, start_search, new_game,
@@ -142,6 +147,7 @@ pub use crate::io::protocols::{
 \*----------------------------------------------------------------------------*/
 pub use crate::debug::graphics::{run_debug_graphics, BoardState};
 pub use crate::debug::headless::run_debug_headless;
+pub use crate::debug::physical::run_debug_physical;
 pub use crate::debug::datagen::run_datagen;
 pub use crate::debug::sprt::{
     parse_sprt_option, parse_sprt_time_control, run_sprt, SPRTEngine,
@@ -212,7 +218,7 @@ pub use std::{
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering},
-        mpsc::{channel, Receiver, Sender},
+        mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -719,6 +725,7 @@ pub const CAPTURE_REACH_WORDS: usize = 2;
 /// - `EMBEDDED_DICTS`   : notation dictionaries, one section per protocol
 /// - `EMBEDDED_PERFT`   : perft suites
 /// - `EMBEDDED_PARAMS`  : shipped tuned parameters
+/// - `EMBEDDED_LAYOUTS` : panel layout guides of the robot board
 ///
 /// The `OPT_*` names are the `setoption` names:
 ///
@@ -763,3 +770,5 @@ pub static EMBEDDED_PERFT: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../res/perft");
 pub static EMBEDDED_PARAMS: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../res/param");
+pub static EMBEDDED_LAYOUTS: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/../res/layout");

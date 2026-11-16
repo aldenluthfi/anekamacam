@@ -168,6 +168,7 @@ The workspace produces a binary named anekamacam. It takes a frontend command:
     anekamacam uci                       # protocol mode (also the default)
     anekamacam debug-graphics            # graphical debug frontend
     anekamacam debug-headless help       # non-graphical debug/tool commands
+    anekamacam debug-physical [device]   # robot console, CEP on device
 
 `debug-headless` uses nested one-shot commands. Position commands accept
 `--protocol`, a quoted `--fen`, and `--moves`:
