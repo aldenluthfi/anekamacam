@@ -869,10 +869,10 @@ impl PTable {
 /// ```text
 ///   Bits 0..31:
 ///
-///   0                               16  18                          31
-///   ┌───────────────────────────────┬───┬────────────────────────────┐
-///   │             score             │flg│           unused           │
-///   └───────────────────────────────┴───┴────────────────────────────┘
+///   0   2                                                           31
+///   ┌───┬────────────────────────────────────────────────────────────┐
+///   │flg│                           unused                           │
+///   └───┴────────────────────────────────────────────────────────────┘
 ///
 ///   Bits 32..63:
 ///
@@ -892,23 +892,25 @@ impl PTable {
 ///
 ///   96                                                             127
 ///   ┌────────────────────────────────────────────────────────────────┐
-///   │                             unused                             │
+///   │                             score                              │
 ///   └────────────────────────────────────────────────────────────────┘
 /// ```
 ///
-/// - bits 0..15   : sign-extended score
-/// - bits 16..17  : bound flag
-/// - bits 18..31  : unused
+/// - bits 0..1    : bound flag
+/// - bits 2..31   : unused
 /// - bits 32..95  : `MoveSignature`
-/// - bits 96..127 : unused
+/// - bits 96..127 : score, all 32 bits of the `i32`
+///
+/// The score has the full width, so a mate score keeps its value and its
+/// ply correction, as in the main table.
 ///
 /// qt_enc_score!
 ///
 ///   Params:
-///   - score  : i32 -> node score, truncated to i16
+///   - score  : i32 -> node score, mates with ply correction
 ///
 ///   Return:
-///   u32            -> score bits in bits 0-15
+///   u128           -> score bits in bits 96-127
 ///
 /// qt_enc_flags!
 ///
@@ -916,49 +918,49 @@ impl PTable {
 ///   - flags  : u8  -> bound type, FEXACT or FBETA
 ///
 ///   Return:
-///   u32            -> flag bits in bits 16-17
+///   u128           -> flag bits in bits 0-1
 ///
 /// qt_score!
 ///
 ///   Params:
-///   - encoded: u32 -> packed score and flag word
+///   - slot   : u128 -> packed `slot[1]` word
 ///
 ///   Return:
-///   i32            -> sign-extended stored score (bits 0-15)
+///   i32             -> stored score (bits 96-127)
 ///
 /// qt_flags!
 ///
 ///   Params:
-///   - encoded: u32 -> packed score and flag word
+///   - slot   : u128 -> packed `slot[1]` word
 ///
 ///   Return:
-///   u8             -> bound flag (bits 16-17)
+///   u8              -> bound flag (bits 0-1)
 ///
 #[macro_export]
 macro_rules! qt_enc_score {
     ($score:expr) => {{
-        (($score as i16) as u32) & 0xFFFF
+        (($score as u32) as u128) << 96
     }};
 }
 
 #[macro_export]
 macro_rules! qt_enc_flags {
     ($flags:expr) => {{
-        ((($flags as u32) & 0x3) << 16)
+        ($flags as u128) & 0x3
     }};
 }
 
 #[macro_export]
 macro_rules! qt_score {
-    ($encoded:expr) => {{
-        (($encoded & 0xFFFF) as i32) << 16 >> 16
+    ($slot:expr) => {{
+        ($slot >> 96) as u32 as i32
     }};
 }
 
 #[macro_export]
 macro_rules! qt_flags {
-    ($encoded:expr) => {{
-        (($encoded >> 16) & 0x3) as u8
+    ($slot:expr) => {{
+        ($slot & 0x3) as u8
     }};
 }
 
@@ -993,12 +995,11 @@ macro_rules! probe_qt_entry {
             $key,
             (false, i32::MIN, null_pseudo_move()),
             |move_slot, data_slot| {
-                let encoded = (data_slot & 0xFFFF_FFFF) as u32;                 /* bits  0-31 = score+flags           */
                 let signature = (data_slot >> 32) as u64;                       /* bits 32-95 = MoveSignature         */
                 let pseudo_move: PseudoMove = (move_slot, signature);
 
-                let entry_flags = qt_flags!(encoded);
-                let mut entry_score = qt_score!(encoded);
+                let entry_flags = qt_flags!(data_slot);
+                let mut entry_score = qt_score!(data_slot);
 
                 if entry_score > MATE_SCORE {
                     entry_score -= $state.search_ply as i32;
@@ -1072,12 +1073,12 @@ macro_rules! hash_qt_entry {
             store_score -= $state.search_ply as i32;
         }
 
-        let encoded = qt_enc_score!(store_score) | qt_enc_flags!($flags);
+        let packed = qt_enc_score!(store_score) | qt_enc_flags!($flags);
 
         let age = $qtable.age.load(Ordering::Relaxed);
         let sig = m_signature!($tt_move);
         let a = $tt_move.0;
-        let b = ((sig as u128) << 32) | (encoded as u128);
+        let b = ((sig as u128) << 32) | packed;
 
         let old_s0 = entry.slot[0];
         let old_s1 = entry.slot[1];
@@ -1086,9 +1087,8 @@ macro_rules! hash_qt_entry {
         let empty = old_s0 == 0 && old_s1 == 0 && old_s2 == 0;
         let different = old_s0 ^ old_s1 ^ old_s2 != hash;
 
-        let old_enc = (old_s1 & 0xFFFF_FFFF) as u32;
-        let old_score = qt_score!(old_enc);
-        let old_flags = qt_flags!(old_enc);
+        let old_score = qt_score!(old_s1);
+        let old_flags = qt_flags!(old_s1);
 
         let should_write = empty
             || different
