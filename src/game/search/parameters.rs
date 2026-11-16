@@ -1968,6 +1968,7 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - quiet pruning       : misere
 /// - static movement     : a screened leg or a CPMN condition on a capture
 /// - wide quiescence     : a vector that captures more than one piece
+/// - final promotion     : a chain of promotions back to the same type
 ///
 /// A pass is a vector that ends on its start square without a capture. A
 /// capturer is a piece that has capture vectors only. The movement facts
@@ -2059,6 +2060,22 @@ pub fn derive_search_capabilities(state: &mut State) {
     let places_army = setup_phase!(state);
     let vetoes_moves = stand_offs!(state);
 
+    let promotion_returns = (0..statics.pieces.len()).any(|origin| {
+        let mut reached = vec![false; statics.pieces.len()];
+        let mut pending = statics.pieces[origin].promotions.clone();
+
+        while let Some(target) = pending.pop() {
+            let target = target as usize;
+
+            if !reached[target] {
+                reached[target] = true;
+                pending.extend(&statics.pieces[target].promotions);
+            }
+        }
+
+        reached[origin]                                                         /* a chain of promotions leads back   */
+    });
+
     let mut capabilities = 0u16;
 
     if !multi_destroy && !misere {
@@ -2097,9 +2114,13 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_free_drops!(capabilities);
     }
 
+    if !promotion_returns {
+        enc_final_promotion!(capabilities);
+    }
+
     state.static_mut().capabilities = capabilities;
 
-    log_3!("Derived Search Capabilities: {:09b}", capabilities);
+    log_3!("Derived Search Capabilities: {:010b}", capabilities);
 }
 
 /*----------------------------------------------------------------------------*\

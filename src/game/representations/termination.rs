@@ -170,8 +170,9 @@ pub struct Perpetual {
 /// offender.
 ///
 /// The count scans the hashes in the history when necessary. In variants
-/// without drops, `clock` limits the scan. A capture, drop, promotion or
-/// castling move makes all earlier positions unreachable.
+/// without drops, `clock` limits the scan. A capture, drop or castling
+/// move makes all earlier positions unreachable. So does a promotion
+/// under `final_promotion!`, as no chain of promotions undoes it.
 ///
 /// Subject: the side that made the repeating move.
 ///

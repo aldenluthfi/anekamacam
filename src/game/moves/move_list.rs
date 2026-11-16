@@ -3773,9 +3773,12 @@ macro_rules! make_move {
             $state.playing = next_player;
             hash_toggle_side!($state);
 
+            let final_promotion = promotion!(applied_move)                      /* a promotion that no promotion can  */
+                && final_promotion!($state);                                    /* undo: earlier positions are gone   */
+
             if let Some(repetition) = &mut $state.termination.repetition {
                 repetition.clock = if move_type == QUIET_MOVE
-                && !promotion!(applied_move) {
+                && !final_promotion {
                     last_repetition_clock.saturating_add(1)
                 } else {
                     0
