@@ -9,8 +9,9 @@ fixes, a display fix, and plainzone, merged on speed as build 49 (main
 66a6ccd). The bigger jobs are the stages below. Stage 1, the evasion
 skip, merged on speed as build 50 (main e3e3142; crazyhouse x0.912).
 Build 50's sweep against FSF 2100 is done: 22 of 32 valid variants are
-at or above it, and the baseline stays. The work is paused for the
-user since 2026-11-15. The test opponent is FSF classical at `UCI_Elo`
+at or above it, and the baseline stays. The work was paused for the
+user from 2026-11-15. Stage 6, two correctness fixes from the user's
+audit, is built on `plan34-correct` and waits for its games. The test opponent is FSF classical at `UCI_Elo`
 2100. Plan 33 is the ledger of builds 34 to 48; plan 29 of the earlier
 tries.
 
@@ -440,3 +441,48 @@ From plan 33's parked chains, each to be read in full first:
 - The king's evaluation in the check and drop variants, the largest
   static gap (crazyhouse -3.56 pawns, plan 33): single terms of FSF's
   all closed, so it needs a form of its own.
+
+### 6. correct: the quiescence score and the repetition clock
+
+Two defects from the user's correctness audit (2026-11-16), on branch
+`plan34-correct` from main 97f5160, one commit each.
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| quiescence table score width | none earlier | | | first try |
+| repetition clock (plan 13) | found, left open | each janggi general move is a promotion, so the scan bound never passes it | "derive a reversible-promotions flag from the promotion map"; the other form moves shogi nodes | the derived flag, set only for a promotion cycle |
+
+- C1, `qwide`: the quiescence table kept its score as an `i16`
+  (since cf7560e). A win `INF - ply` (2,000,000 less the ply) read back
+  as -31,873 and a loss as +31,876; an exact entry cuts at once; the
+  mate correction of the probe could never fire. The score now has
+  bits 96 to 127, the flag bits 0 and 1, as wide as the main table's.
+  - A stored score inside the `i16` range packs, reads and compares as
+    before, so a tree can change only where a score past it was stored.
+  - Seeded bench (depth 9, 40 positions) against main: standard,
+    crazyhouse, grand, xiangqi and shogi the same; capablanca 1,648,334
+    to 1,652,407, all of it from position 39, whose trees part at depth
+    3 (617 to 616 nodes), a full-window depth where a win in quiescence
+    is stored as exact.
+- C2, `finalpromo`: the repetition clock restarted at each promotion,
+  so in a variant without drops the scan never passed one. Janggi's
+  palace swaps (K:Q, Q:K, A:F, F:A) are promotions both ways, so no
+  cycle with a general or an advisor counted. Capability bit 9,
+  `final_promotion!`, is set unless a chain of promotions leads a piece
+  back to its own type; the clock restarts at a promotion only under it.
+  - Of the 44 configs, only janggi lacks the bit; every other variant
+    keeps its clock as before.
+  - The general shuffle from `r7r/4q4/9/9/4p4/4P4/9/9/4Q4/R7R w /`
+    (`e2:d2=K e9:d9=k d2:e2=Q d9:e9=q`) was Ongoing at the third and
+    fourth occurrence; it is a draw at the third, as the chariot
+    shuffle was before. This also makes janggi's `perpetual: check
+    loss` able to fire (plan 13 found it inert).
+  - Seeded bench (depth 8, 30 positions) against C1: the same in 16 of
+    the 17 suites; janggi 784,138 to 786,037. The perft suites of
+    janggi (21), standard (900), xiangqi, crazyhouse, capablanca and
+    shogi pass.
+- Build clean, clippy at its 20 warnings, the style scan of the diff
+  clean.
+- Due: games. C2 moves no tree outside janggi, which FSF does not play
+  validly. C1 moves trees wherever a game ends inside quiescence; its
+  merge rule waits for the user.
