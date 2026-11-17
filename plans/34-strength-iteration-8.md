@@ -11,7 +11,8 @@ skip, merged on speed as build 50 (main e3e3142; crazyhouse x0.912).
 Build 50's sweep against FSF 2100 is done: 22 of 32 valid variants are
 at or above it, and the baseline stays. The work was paused for the
 user from 2026-11-15. Stage 6, two correctness fixes from the user's
-audit, is built on `plan34-correct` and waits for its games. The test opponent is FSF classical at `UCI_Elo`
+audit, is built on `plan34-correct`; its regression arm waits for a
+session on the Windows machine. The test opponent is FSF classical at `UCI_Elo`
 2100. Plan 33 is the ledger of builds 34 to 48; plan 29 of the earlier
 tries.
 
@@ -484,5 +485,17 @@ Two defects from the user's correctness audit (2026-11-16), on branch
 - Build clean, clippy at its 20 warnings, the style scan of the diff
   clean.
 - Due: games. C2 moves no tree outside janggi, which FSF does not play
-  validly. C1 moves trees wherever a game ends inside quiescence; its
-  merge rule waits for the user.
+  validly. C1 moves trees wherever a game ends inside quiescence.
+- Rule set before the games (user, 2026-11-17), a regression arm: the
+  two are fixes, so they merge together as build 51 unless they play
+  worse. Worse is a mean of the five below -2σ, any variant below -2σ,
+  or a forfeit. A run may stop early once a loss is shown.
+- Queue (the Windows machine, `queue.sh`): main and `correct`
+  (`plan34-correct`, 1bf1572 or later), interleaved, in crazyhouse,
+  threecheck, koth, grand and standard; three rounds of 200 against FSF
+  classical at `UCI_Elo` 2100 on its own 10+0.1 clock; `watch.sh` on.
+  This Mac session cannot reach that machine, and the server does not
+  answer, so the queue waits for a session there.
+- Smoke (the Mac, `correct` against FSF 2100, 4 games a variant,
+  concurrency 4): crazyhouse 2-2, grand 3-1, koth 4-0, standard 3-1,
+  threecheck 4-0; no forfeits, illegal moves or crashes on either side.
